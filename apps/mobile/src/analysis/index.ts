@@ -9,16 +9,22 @@
  * - Evaluate bottlenecks in the chain
  * - Generate human-readable verdicts
  * - Category-specific validation rules
- *
- * Exports:
- * - validateClaim: Main claim validation function
- * - buildConstraintChain: Construct chain from specs
- * - ClaimValidator: Validation service class
- * - VerdictGenerator: Generate explanations
  */
 
-export * from './ClaimValidator';
-export * from './ConstraintChain';
-export * from './CategoryRules';
-export * from './VerdictGenerator';
-export * from './types';
+export {
+  parseClaim,
+  parseMultipleClaims,
+  validateClaim,
+  formatClaimValue,
+} from './ClaimParser';
+
+export { buildConstraintChain } from './ConstraintChainBuilder';
+
+export {
+  generateVerdict,
+  getVerdictColor,
+  getVerdictIcon,
+  getVerdictLabel,
+  getConfidenceDescription,
+  formatVerdictForShare,
+} from './VerdictGenerator';

@@ -8,15 +8,8 @@
  * - Remote API lookup for cache misses
  * - Spec parsing and normalization
  * - Cache invalidation and refresh
- *
- * Exports:
- * - DatasheetCache: Local cache manager
- * - DatasheetAPI: Remote lookup client
- * - getSpecs: Main function to retrieve specs
- * - parseDatasheet: Extract key specs from raw data
  */
 
-export * from './DatasheetCache';
-export * from './DatasheetAPI';
-export * from './SpecParser';
-export * from './types';
+export { DatasheetCache, getDatasheetCache } from './DatasheetCache';
+export { DatasheetAPI, getDatasheetAPI } from './DatasheetAPI';
+export { SpecRetriever, getSpecRetriever } from './SpecRetriever';

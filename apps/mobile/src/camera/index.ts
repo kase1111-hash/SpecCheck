@@ -9,15 +9,8 @@
  * - Frame capture for ML processing
  * - Full resolution capture on user tap
  * - Orientation handling
- *
- * Exports:
- * - CameraView: Main camera component
- * - useCamera: Hook for camera controls
- * - captureFrame: Capture current frame for processing
- * - captureFullRes: Capture full resolution image
  */
 
-export * from './CameraView';
-export * from './useCamera';
-export * from './captureFrame';
-export * from './types';
+export { CameraView } from './CameraView';
+export { useCamera } from './useCamera';
+export { generateFrameId, scaleBoundingBox, cropImage } from './utils';
