@@ -1,0 +1,39 @@
+name = "speccheck-api"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Development
+[env.dev]
+name = "speccheck-api-dev"
+
+# Staging
+[env.staging]
+name = "speccheck-api-staging"
+
+# Production
+[env.production]
+name = "speccheck-api"
+routes = [
+  { pattern = "api.speccheck.app", custom_domain = true }
+]
+
+# KV Namespace for caching
+[[kv_namespaces]]
+binding = "DATASHEET_CACHE"
+id = "your-kv-namespace-id"
+preview_id = "your-preview-kv-namespace-id"
+
+# R2 Bucket for image storage
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "speccheck-images"
+preview_bucket_name = "speccheck-images-preview"
+
+# Environment variables (set via wrangler secret)
+# SUPABASE_URL
+# SUPABASE_ANON_KEY
+# ANTHROPIC_API_KEY
+
+[vars]
+ENVIRONMENT = "development"

@@ -1,0 +1,43 @@
+{
+  "name": "speccheck",
+  "version": "0.1.0",
+  "private": true,
+  "description": "X-ray vision for tech claims. Point your camera at a circuit board and see what's actually possible.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "mobile": "npm run --workspace=@speccheck/mobile",
+    "mobile:start": "npm run start --workspace=@speccheck/mobile",
+    "mobile:ios": "npm run ios --workspace=@speccheck/mobile",
+    "mobile:android": "npm run android --workspace=@speccheck/mobile",
+    "backend": "npm run --workspace=@speccheck/backend",
+    "backend:dev": "npm run dev --workspace=@speccheck/backend",
+    "backend:deploy": "npm run deploy --workspace=@speccheck/backend",
+    "types": "npm run --workspace=@speccheck/shared-types",
+    "types:build": "npm run build --workspace=@speccheck/shared-types",
+    "build": "npm run build --workspaces",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kase1111-hash/SpecCheck.git"
+  },
+  "keywords": [
+    "electronics",
+    "verification",
+    "ar",
+    "machine-learning",
+    "react-native",
+    "expo"
+  ],
+  "author": "",
+  "license": "MIT"
+}
