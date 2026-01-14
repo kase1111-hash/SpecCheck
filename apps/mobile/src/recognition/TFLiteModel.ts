@@ -7,7 +7,6 @@
 
 import * as tf from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-react-native';
-import * as FileSystem from 'expo-file-system';
 import { Asset } from 'expo-asset';
 import type { ComponentCategory, BoundingBox } from '@speccheck/shared-types';
 

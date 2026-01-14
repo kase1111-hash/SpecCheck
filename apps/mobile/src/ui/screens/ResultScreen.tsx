@@ -55,7 +55,7 @@ const MOCK_VERDICT: Verdict = {
 /**
  * Mock detected components for UI development
  */
-const MOCK_COMPONENTS: Array<{ component: string; constraint: string; limit: string }> = [
+const MOCK_COMPONENTS: { component: string; constraint: string; limit: string }[] = [
   {
     component: 'Cree XHP70.2',
     constraint: 'Maximum luminous flux: 4,292 lm @ 2.4A',
@@ -142,10 +142,10 @@ function getConfidenceInfo(confidence: Verdict['confidence']): {
 }
 
 export function ResultScreen({
-  scanId,
+  scanId: _scanId,
   onClose,
   onSave,
-  onViewComponent,
+  onViewComponent: _onViewComponent,
 }: ResultScreenProps) {
   const { currentVerdict, detectedComponents, saveComponent } = useAppStore();
 

@@ -204,7 +204,7 @@ export async function preprocessImage(
 export function mapCoordinatesToOriginal(
   bbox: BoundingBox,
   preprocessInfo: PreprocessedImage,
-  modelInputSize: number
+  _modelInputSize: number
 ): BoundingBox {
   const { scale, offsetX, offsetY, originalWidth, originalHeight } = preprocessInfo;
 
