@@ -14,8 +14,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@expo/vector-icons": "^14.0.0",
+    "@react-native-async-storage/async-storage": "~2.1.0",
     "@speccheck/shared-types": "*",
     "expo": "~52.0.0",
+    "expo-splash-screen": "~0.29.0",
     "expo-camera": "~16.0.0",
     "expo-image": "~2.0.0",
     "expo-image-manipulator": "~13.0.0",
