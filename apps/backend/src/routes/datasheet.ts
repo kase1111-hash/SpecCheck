@@ -9,24 +9,25 @@
  */
 
 import { Hono } from 'hono';
-import type { DatasheetResponse, SearchRequest, IdentifyRequest } from './types';
+import type { AppEnv } from '../index';
+import type { SearchRequest, IdentifyRequest } from './types';
 
-export const datasheetRoutes = new Hono();
+export const datasheetRoutes = new Hono<AppEnv>();
 
 /**
  * Get datasheet by part number
  */
 datasheetRoutes.get('/:partNumber', async (c) => {
   const partNumber = c.req.param('partNumber');
-  // TODO: Implement datasheet lookup
-  return c.json({
-    partNumber,
-    manufacturer: '',
-    category: '',
-    specs: {},
-    datasheetUrl: '',
-    lastUpdated: Date.now(),
-  } satisfies DatasheetResponse);
+  const service = c.get('datasheetService');
+
+  const datasheet = await service.getByPartNumber(partNumber);
+
+  if (!datasheet) {
+    return c.json({ error: 'Datasheet not found' }, 404);
+  }
+
+  return c.json(datasheet);
 });
 
 /**
@@ -34,8 +35,15 @@ datasheetRoutes.get('/:partNumber', async (c) => {
  */
 datasheetRoutes.post('/search', async (c) => {
   const body = await c.req.json<SearchRequest>();
-  // TODO: Implement search
-  return c.json({ matches: [] });
+  const service = c.get('datasheetService');
+
+  if (!body.query || body.query.trim().length === 0) {
+    return c.json({ error: 'Query is required' }, 400);
+  }
+
+  const matches = await service.search(body.query, body.category);
+
+  return c.json({ matches });
 });
 
 /**
@@ -43,6 +51,13 @@ datasheetRoutes.post('/search', async (c) => {
  */
 datasheetRoutes.post('/identify', async (c) => {
   const body = await c.req.json<IdentifyRequest>();
-  // TODO: Implement identification
-  return c.json({ matches: [], confidence: 0 });
+  const service = c.get('datasheetService');
+
+  if (!body.textLines || body.textLines.length === 0) {
+    return c.json({ error: 'Text lines are required' }, 400);
+  }
+
+  const result = await service.identify(body.textLines, body.categoryHint);
+
+  return c.json(result);
 });

@@ -7,27 +7,29 @@
  */
 
 import { Hono } from 'hono';
-import type { AnalyzeRequest, AnalyzeResponse } from './types';
+import type { AppEnv } from '../index';
+import type { AnalyzeRequest } from './types';
 
-export const analyzeRoutes = new Hono();
+export const analyzeRoutes = new Hono<AppEnv>();
 
 /**
  * Analyze a claim against detected components
  */
 analyzeRoutes.post('/claim', async (c) => {
   const body = await c.req.json<AnalyzeRequest>();
+  const service = c.get('llmService');
 
-  // TODO: Implement LLM analysis
-  // 1. Build prompt with component specs and claim
-  // 2. Call Claude API
-  // 3. Parse structured response
-  // 4. Return verdict
+  // Validate request
+  if (!body.claim || typeof body.claim.value !== 'number') {
+    return c.json({ error: 'Invalid claim format' }, 400);
+  }
 
-  return c.json({
-    verdict: 'uncertain',
-    maxPossible: 0,
-    unit: '',
-    reasoning: 'Analysis not yet implemented',
-    chain: [],
-  } satisfies AnalyzeResponse);
+  if (!body.components || body.components.length === 0) {
+    return c.json({ error: 'At least one component is required' }, 400);
+  }
+
+  // Run LLM analysis
+  const result = await service.analyzeClaim(body);
+
+  return c.json(result);
 });
