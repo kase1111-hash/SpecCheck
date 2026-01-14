@@ -16,8 +16,9 @@
  * - useOverlayState: Hook for overlay management
  */
 
-export * from './AROverlay';
-export * from './ComponentMarker';
-export * from './SpecCard';
-export * from './useOverlayState';
+// TODO: Implement AR components
+// export * from './AROverlay';
+// export * from './ComponentMarker';
+// export * from './SpecCard';
+// export * from './useOverlayState';
 export * from './types';
