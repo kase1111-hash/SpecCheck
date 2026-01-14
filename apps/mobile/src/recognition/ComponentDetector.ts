@@ -12,7 +12,6 @@ import type {
   CameraFrame,
   DetectedRegion,
   DetectionResult,
-  ComponentCategory,
   BoundingBox,
 } from '@speccheck/shared-types';
 import {
@@ -26,9 +25,6 @@ import {
 
 /** Detection confidence threshold */
 const CONFIDENCE_THRESHOLD = 0.5;
-
-/** Model input size */
-const MODEL_INPUT_SIZE = 320;
 
 /** Model version identifier */
 const MODEL_VERSION = '1.0.0';
