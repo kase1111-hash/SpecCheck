@@ -376,13 +376,11 @@ export class TFLiteModel {
       throw new Error('Model not loaded');
     }
 
-    return tf.tidy(() => {
-      // Preprocess
-      const input = this.preprocessImage(imageTensor);
+    // Preprocess image (synchronous, uses tidy internally)
+    const input = this.preprocessImage(imageTensor);
 
-      // Run inference (need to handle async outside tidy)
-      return input;
-    }).then(async (input) => {
+    try {
+      // Run inference (async operation)
       const output = await this.runInference(input);
 
       // Postprocess
@@ -393,12 +391,14 @@ export class TFLiteModel {
       );
 
       // Cleanup tensors
-      input.dispose();
       output.dispose();
 
       // Apply NMS
       return this.applyNMS(detections);
-    });
+    } finally {
+      // Always cleanup input tensor
+      input.dispose();
+    }
   }
 
   /**
