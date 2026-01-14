@@ -19,4 +19,11 @@ config.resolver.nodeModulesPaths = [
 // 3. Force Metro to resolve (sub)dependencies only from the `nodeModulesPaths`
 config.resolver.disableHierarchicalLookup = true;
 
+// 4. Add TFLite model files as assets
+config.resolver.assetExts = [
+  ...config.resolver.assetExts,
+  'tflite',
+  'bin',
+];
+
 module.exports = config;
