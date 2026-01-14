@@ -39,5 +39,8 @@
     "expo"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "ajv": "^8.17.1"
+  }
 }
