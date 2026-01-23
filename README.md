@@ -136,8 +136,12 @@ The people selling this stuff count on buyers not knowing how to verify claims. 
 
 ## License
 
-[TBD]
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Contributing
 
-[TBD]
+Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) before submitting a pull request.
+
+## Security
+
+For information about reporting security vulnerabilities, please see our [Security Policy](SECURITY.md).
