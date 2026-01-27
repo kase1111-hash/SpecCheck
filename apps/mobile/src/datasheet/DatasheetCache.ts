@@ -11,6 +11,7 @@ import type {
   SpecValue,
   ComponentCategory,
 } from '@speccheck/shared-types';
+import type { SQLiteDatabase } from 'expo-sqlite';
 
 /** Cache TTL in milliseconds (30 days) */
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -19,7 +20,7 @@ const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
  * Datasheet cache service
  */
 export class DatasheetCache {
-  private db: any = null; // SQLite database instance
+  private db: SQLiteDatabase | null = null;
 
   /**
    * Initialize the cache database
