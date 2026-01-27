@@ -27,6 +27,12 @@ interface AnalysisResult {
   chain: ChainLink[];
 }
 
+/** Maximum retry attempts for transient errors */
+const MAX_RETRIES = 3;
+
+/** Base delay in ms for exponential backoff */
+const BASE_DELAY_MS = 1000;
+
 export class LLMService {
   private apiKey: string;
   private model: string;
@@ -37,58 +43,107 @@ export class LLMService {
   }
 
   /**
+   * Sleep for a given number of milliseconds
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Check if an error is retryable (network or server errors)
+   */
+  private isRetryableError(status: number): boolean {
+    return status === 429 || status >= 500;
+  }
+
+  /**
    * Analyze a claim using Claude
    */
   async analyzeClaim(request: AnalyzeRequest): Promise<AnalyzeResponse> {
     const prompt = this.buildPrompt(request);
+    let lastError: Error | null = null;
 
-    try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': this.apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: this.model,
-          max_tokens: 2048,
-          messages: [
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
-        }),
-      });
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': this.apiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: this.model,
+            max_tokens: 2048,
+            messages: [
+              {
+                role: 'user',
+                content: prompt,
+              },
+            ],
+          }),
+        });
 
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Claude API error: ${response.status} - ${error}`);
+        if (!response.ok) {
+          const error = await response.text();
+          const errorMessage = `Claude API error: ${response.status} - ${error}`;
+
+          // Retry on transient errors with exponential backoff
+          if (this.isRetryableError(response.status) && attempt < MAX_RETRIES) {
+            const delayMs = BASE_DELAY_MS * Math.pow(2, attempt);
+            console.warn(
+              `Retryable error (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying in ${delayMs}ms: ${errorMessage}`
+            );
+            await this.sleep(delayMs);
+            lastError = new Error(errorMessage);
+            continue;
+          }
+
+          throw new Error(errorMessage);
+        }
+
+        const data = (await response.json()) as ClaudeResponse;
+        const textContent = data.content.find((c) => c.type === 'text');
+
+        if (!textContent) {
+          throw new Error('No text content in Claude response');
+        }
+
+        // Parse JSON from response
+        const result = this.parseResponse(textContent.text);
+        return result;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+
+        // Retry on network errors with exponential backoff
+        if (
+          attempt < MAX_RETRIES &&
+          (error instanceof TypeError || // Network errors often throw TypeError
+            (error instanceof Error && error.message.includes('fetch')))
+        ) {
+          const delayMs = BASE_DELAY_MS * Math.pow(2, attempt);
+          console.warn(
+            `Network error (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying in ${delayMs}ms: ${lastError.message}`
+          );
+          await this.sleep(delayMs);
+          continue;
+        }
+
+        // Non-retryable error or max retries reached
+        break;
       }
-
-      const data = (await response.json()) as ClaudeResponse;
-      const textContent = data.content.find((c) => c.type === 'text');
-
-      if (!textContent) {
-        throw new Error('No text content in Claude response');
-      }
-
-      // Parse JSON from response
-      const result = this.parseResponse(textContent.text);
-      return result;
-    } catch (error) {
-      console.error('LLM analysis failed:', error);
-
-      // Return uncertain verdict on error
-      return {
-        verdict: 'uncertain',
-        maxPossible: 0,
-        unit: request.claim.unit,
-        reasoning: `Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        chain: [],
-      };
     }
+
+    console.error('LLM analysis failed after retries:', lastError);
+
+    // Return uncertain verdict on error
+    return {
+      verdict: 'uncertain',
+      maxPossible: 0,
+      unit: request.claim.unit,
+      reasoning: `Analysis failed: ${lastError?.message || 'Unknown error'}`,
+      chain: [],
+    };
   }
 
   /**

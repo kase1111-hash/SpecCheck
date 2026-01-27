@@ -365,11 +365,18 @@ function finalizeChain(claim: Claim, links: ChainLink[]): ConstraintChain {
     verdict = 'impossible';
   }
 
-  // Determine confidence based on coverage
+  // Determine confidence based on coverage and link quality
   let confidence: VerdictConfidence;
-  if (links.length >= 3) {
+  const highQualityLinks = links.filter(
+    (link) =>
+      link.component.specs !== null &&
+      link.component.match.status === 'confident' &&
+      link.component.match.confidence >= 0.9
+  );
+
+  if (highQualityLinks.length >= 3) {
     confidence = 'high';
-  } else if (links.length >= 2) {
+  } else if (highQualityLinks.length >= 2 || links.length >= 3) {
     confidence = 'medium';
   } else {
     confidence = 'low';

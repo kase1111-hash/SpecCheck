@@ -54,8 +54,15 @@ export class ComponentMatcher {
       }
     }
 
+    // Extract frameId from regionId (format: "frameId_regionIndex" or just "frameId")
+    const firstRegionId = extractions[0]?.regionId || '';
+    const underscoreIndex = firstRegionId.lastIndexOf('_');
+    const frameId = underscoreIndex > 0
+      ? firstRegionId.substring(0, underscoreIndex)
+      : firstRegionId;
+
     return {
-      frameId: extractions[0]?.regionId.split('_')[0] || '',
+      frameId,
       components,
       matchedCount,
       partialCount,
