@@ -18,6 +18,13 @@ import { getSupabase } from './db/client';
 import { DatasheetService } from './services/DatasheetService';
 import { LLMService } from './services/LLMService';
 import { StorageService } from './services/StorageService';
+import {
+  rateLimitDatasheet,
+  rateLimitAnalyze,
+  rateLimitSubmit,
+  rateLimitSearch,
+} from './middleware/rateLimit';
+import { auth } from './middleware/auth';
 import type { Env } from './env';
 
 /**
@@ -58,6 +65,20 @@ app.use('/*', async (c, next) => {
 
 // Health check
 app.get('/', (c) => c.json({ status: 'ok', service: 'speccheck-api' }));
+
+// Apply rate limiting and auth middleware to specific routes
+// Datasheet routes - higher limits for read-heavy operations
+app.use('/api/datasheet/*', rateLimitDatasheet);
+
+// Analyze routes - lower limits for expensive LLM operations
+app.use('/api/analyze/*', rateLimitAnalyze);
+app.use('/api/analyze/*', auth);
+
+// Community routes - different limits for different operations
+app.use('/api/community/search', rateLimitSearch);
+app.use('/api/community/recent', rateLimitSearch);
+app.use('/api/community/submit', rateLimitSubmit);
+app.use('/api/community/submit', auth);
 
 // Mount routes
 app.route('/api/datasheet', datasheetRoutes);

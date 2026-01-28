@@ -90,30 +90,103 @@ export class OCREngine {
     const rawLines = await this.runOCR(imageBase64, region.bbox);
     const cleanedText = this.cleanOCRText(rawLines);
 
+    // Calculate confidence based on text extraction success
+    const confidence = rawLines.length > 0
+      ? Math.min(0.95, 0.5 + (rawLines.length * 0.1) + (cleanedText.length > 5 ? 0.2 : 0))
+      : 0.1;
+
     return {
       regionId: region.regionId,
       rawLines,
       cleanedText,
-      confidence: 0.9, // TODO: Get from OCR result
-      words: [], // TODO: Populate from OCR
+      confidence,
+      words: this.extractWords(rawLines),
     };
   }
 
   /**
-   * Run OCR on a region of the image
-   * Placeholder for actual MLKit/Vision implementation
+   * Run OCR on a region of the image using platform text recognition
    */
   private async runOCR(
     imageBase64: string,
     bbox: BoundingBox
   ): Promise<string[]> {
-    // TODO: Implement actual OCR
-    // Example using expo-ml-kit or react-native-mlkit-ocr:
-    // const result = await MLKit.textRecognition(croppedImage);
-    // return result.blocks.flatMap(b => b.lines.map(l => l.text));
+    try {
+      // Dynamically import expo-image-manipulator for cropping
+      const ImageManipulator = await import('expo-image-manipulator');
 
-    // Return empty for development
-    return [];
+      // Crop image to the bounding box region
+      const croppedResult = await ImageManipulator.manipulateAsync(
+        imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`,
+        [
+          {
+            crop: {
+              originX: bbox.x,
+              originY: bbox.y,
+              width: bbox.width,
+              height: bbox.height,
+            },
+          },
+        ],
+        { base64: true, format: ImageManipulator.SaveFormat.JPEG }
+      );
+
+      // Use react-native-mlkit-ocr for text recognition
+      // This requires the package to be installed: npm install @react-native-ml-kit/text-recognition
+      try {
+        const TextRecognition = await import('@react-native-ml-kit/text-recognition');
+        const result = await TextRecognition.default.recognize(croppedResult.uri);
+
+        // Extract text lines from all blocks
+        const lines: string[] = [];
+        for (const block of result.blocks) {
+          for (const line of block.lines) {
+            if (line.text && line.text.trim().length > 0) {
+              lines.push(line.text);
+            }
+          }
+        }
+
+        return lines;
+      } catch (mlkitError) {
+        // Fallback: Try using expo's built-in OCR capabilities if available
+        console.warn('[OCREngine] ML Kit not available, trying fallback:', mlkitError);
+        return this.runFallbackOCR(croppedResult.base64 || '');
+      }
+    } catch (error) {
+      console.error('[OCREngine] OCR processing error:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Fallback OCR using tesseract.js for web/development
+   * or returning mock data for testing
+   */
+  private async runFallbackOCR(imageBase64: string): Promise<string[]> {
+    // In development/testing, check if we have known test patterns
+    // This allows the app to function with mock data during development
+    if (__DEV__) {
+      console.log('[OCREngine] Running in development mode with mock OCR');
+      // Return empty - the ComponentMatcher will use its known patterns
+      return [];
+    }
+
+    // For production without ML Kit, try tesseract.js (web) or return empty
+    try {
+      // Dynamic import for web environments
+      const Tesseract = await import('tesseract.js');
+      const result = await Tesseract.recognize(
+        `data:image/jpeg;base64,${imageBase64}`,
+        'eng',
+        { logger: () => {} } // Suppress logging
+      );
+
+      return result.data.lines.map((line: { text: string }) => line.text);
+    } catch {
+      // Tesseract not available
+      return [];
+    }
   }
 
   /**
@@ -175,6 +248,38 @@ export class OCREngine {
       }
     }
     return null;
+  }
+
+  /**
+   * Extract words with placeholder bounding boxes from raw lines
+   */
+  private extractWords(rawLines: string[]): OCRWord[] {
+    const words: OCRWord[] = [];
+    let yOffset = 0;
+
+    for (const line of rawLines) {
+      const lineWords = line.split(/\s+/);
+      let xOffset = 0;
+
+      for (const word of lineWords) {
+        if (word.trim().length > 0) {
+          words.push({
+            text: word,
+            confidence: 0.9, // Placeholder confidence
+            bbox: {
+              x: xOffset,
+              y: yOffset,
+              width: word.length * 10, // Approximate width
+              height: 20, // Approximate height
+            },
+          });
+          xOffset += word.length * 10 + 5;
+        }
+      }
+      yOffset += 25;
+    }
+
+    return words;
   }
 
   /**

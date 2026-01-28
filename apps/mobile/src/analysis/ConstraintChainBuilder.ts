@@ -18,6 +18,78 @@ import type {
 } from '@speccheck/shared-types';
 
 /**
+ * Configurable efficiency values by product category
+ * These represent real-world conversion losses in power delivery
+ */
+export const EFFICIENCY_CONFIG = {
+  // Power bank efficiency (battery to USB output)
+  powerBank: {
+    dcDcConversion: 0.90,   // DC-DC converter efficiency
+    cableAndConnector: 0.98, // Cable and connector losses
+    overall: 0.85,           // Conservative overall efficiency
+  },
+  // Charger efficiency (wall to device)
+  charger: {
+    acDcConversion: 0.88,   // AC-DC conversion
+    pdNegotiation: 0.99,    // PD overhead
+    overall: 0.87,
+  },
+  // Flashlight efficiency (battery to light)
+  flashlight: {
+    driverEfficiency: 0.92, // LED driver efficiency
+    thermalDerating: 0.85,  // Thermal derating at high power
+    overall: 0.78,
+  },
+  // Default for unknown categories
+  default: 0.85,
+} as const;
+
+/**
+ * LED efficiency model parameters
+ * Based on typical LED behavior where efficiency decreases at higher currents
+ */
+const LED_EFFICIENCY_MODEL = {
+  // Efficiency typically drops off above 50% of max current
+  linearRegionRatio: 0.5,
+  // At max current, efficiency is typically 70-85% of peak
+  maxCurrentEfficiencyRatio: 0.75,
+  // Minimum efficiency floor
+  minimumEfficiency: 0.5,
+} as const;
+
+/**
+ * Calculate LED lumens output using non-linear efficiency model
+ * LEDs don't scale linearly - efficiency drops at higher currents due to droop
+ */
+function calculateLedLumensAtCurrent(
+  targetCurrent: number,
+  maxCurrent: number,
+  maxLumens: number
+): number {
+  const currentRatio = targetCurrent / maxCurrent;
+
+  if (currentRatio <= LED_EFFICIENCY_MODEL.linearRegionRatio) {
+    // Linear region - lumens scale proportionally with current
+    return (currentRatio / LED_EFFICIENCY_MODEL.linearRegionRatio) *
+           (LED_EFFICIENCY_MODEL.linearRegionRatio * maxLumens);
+  }
+
+  // Non-linear region - apply efficiency droop
+  // Use a quadratic model for the efficiency curve
+  const linearOutput = LED_EFFICIENCY_MODEL.linearRegionRatio * maxLumens;
+  const remainingRatio = (currentRatio - LED_EFFICIENCY_MODEL.linearRegionRatio) /
+                         (1 - LED_EFFICIENCY_MODEL.linearRegionRatio);
+
+  // Efficiency decreases quadratically in the high-current region
+  const droopFactor = 1 - (1 - LED_EFFICIENCY_MODEL.maxCurrentEfficiencyRatio) *
+                          Math.pow(remainingRatio, 1.5);
+
+  const additionalOutput = (maxLumens - linearOutput) * remainingRatio * droopFactor;
+
+  return Math.round(linearOutput + additionalOutput);
+}
+
+/**
  * Build a constraint chain for a claim
  */
 export function buildConstraintChain(
@@ -83,17 +155,20 @@ function buildLumensChain(
       const ledMaxLumens = led.specs.specs['luminous_flux'];
 
       if (ledMaxCurrent && ledMaxLumens) {
-        // Linear approximation: lumens scale with current
-        const driverLimitedLumens =
-          (maxCurrent.value / ledMaxCurrent.value) * ledMaxLumens.value;
+        // Use non-linear LED efficiency model
+        const driverLimitedLumens = calculateLedLumensAtCurrent(
+          Math.min(maxCurrent.value, ledMaxCurrent.value),
+          ledMaxCurrent.value,
+          ledMaxLumens.max || ledMaxLumens.value
+        );
 
         links.push({
           component: driver,
           constraintType: 'max_current',
-          maxValue: Math.round(driverLimitedLumens),
+          maxValue: driverLimitedLumens,
           unit: 'lm',
           isBottleneck: false,
-          explanation: `${driver.specs.partNumber} driver limits current to ${maxCurrent.value}mA → ~${Math.round(driverLimitedLumens)} lumens`,
+          explanation: `${driver.specs.partNumber} driver @ ${maxCurrent.value}mA → ~${driverLimitedLumens} lumens (with efficiency droop)`,
           sourceSpec: 'max_output_current',
         });
       }
@@ -113,17 +188,20 @@ function buildLumensChain(
       const ledMaxLumens = led.specs.specs['luminous_flux'];
 
       if (ledMaxCurrent && ledMaxLumens) {
-        const batteryLimitedLumens =
-          (Math.min(availableCurrent, ledMaxCurrent.value) / ledMaxCurrent.value) *
-          ledMaxLumens.value;
+        // Use non-linear LED efficiency model
+        const batteryLimitedLumens = calculateLedLumensAtCurrent(
+          Math.min(availableCurrent, ledMaxCurrent.value),
+          ledMaxCurrent.value,
+          ledMaxLumens.max || ledMaxLumens.value
+        );
 
         links.push({
           component: battery,
           constraintType: 'max_discharge',
-          maxValue: Math.round(batteryLimitedLumens),
+          maxValue: batteryLimitedLumens,
           unit: 'lm',
           isBottleneck: false,
-          explanation: `${battery.specs.partNumber} max discharge ${maxDischarge.value}A → ~${Math.round(batteryLimitedLumens)} lumens`,
+          explanation: `${battery.specs.partNumber} @ ${maxDischarge.value}A discharge → ~${batteryLimitedLumens} lumens (with efficiency droop)`,
           sourceSpec: 'max_continuous_discharge',
         });
       }
@@ -164,9 +242,9 @@ function buildCapacityChain(
     }
   }
 
-  // Apply conversion efficiency (typically 85-90%)
-  const EFFICIENCY = 0.85;
-  const deliverableCapacity = Math.round(totalCapacity * EFFICIENCY);
+  // Apply conversion efficiency using configurable values
+  const efficiency = EFFICIENCY_CONFIG.powerBank.overall;
+  const deliverableCapacity = Math.round(totalCapacity * efficiency);
 
   if (totalCapacity > 0) {
     links.push({
@@ -175,7 +253,7 @@ function buildCapacityChain(
       maxValue: deliverableCapacity,
       unit: 'mAh',
       isBottleneck: false,
-      explanation: `Total ${totalCapacity}mAh × ${EFFICIENCY * 100}% efficiency = ${deliverableCapacity}mAh deliverable`,
+      explanation: `Total ${totalCapacity}mAh × ${(efficiency * 100).toFixed(0)}% efficiency (DC-DC + losses) = ${deliverableCapacity}mAh deliverable`,
       sourceSpec: 'efficiency',
     });
   }
@@ -314,7 +392,101 @@ function buildVoltageChain(
   components: ComponentWithSpecs[]
 ): ConstraintChain {
   const links: ChainLink[] = [];
-  // TODO: Implement voltage chain
+
+  // Find DC-DC converter voltage limits
+  const dcdc = components.find((c) => c.specs?.category === 'dc_dc');
+  if (dcdc?.specs) {
+    const maxVoltage = dcdc.specs.specs['max_output_voltage'];
+    if (maxVoltage) {
+      links.push({
+        component: dcdc,
+        constraintType: 'voltage_limit',
+        maxValue: maxVoltage.value,
+        unit: 'V',
+        isBottleneck: false,
+        explanation: `${dcdc.specs.partNumber} DC-DC: max ${maxVoltage.value}V output`,
+        sourceSpec: 'max_output_voltage',
+      });
+    }
+  }
+
+  // Find USB PD controller supported voltages
+  const pdController = components.find((c) => c.specs?.category === 'usb_pd');
+  if (pdController?.specs) {
+    const supportedVoltages = pdController.specs.specs['supported_voltages'];
+    const maxCurrent = pdController.specs.specs['max_current'];
+    if (supportedVoltages) {
+      // Parse supported voltages (stored as comma-separated string or max value)
+      const maxVoltage = typeof supportedVoltages.value === 'number'
+        ? supportedVoltages.value
+        : parseFloat(String(supportedVoltages.max || supportedVoltages.value));
+
+      links.push({
+        component: pdController,
+        constraintType: 'voltage_limit',
+        maxValue: maxVoltage,
+        unit: 'V',
+        isBottleneck: false,
+        explanation: `${pdController.specs.partNumber} PD: supports up to ${maxVoltage}V`,
+        sourceSpec: 'supported_voltages',
+      });
+    }
+  }
+
+  // Find battery cells - series configuration determines max voltage
+  const batteries = components.filter((c) => c.specs?.category === 'battery_cell');
+  if (batteries.length > 0) {
+    let maxBatteryVoltage = 0;
+    const voltagePerCell: number[] = [];
+
+    for (const battery of batteries) {
+      if (battery.specs) {
+        const nominalVoltage = battery.specs.specs['nominal_voltage'];
+        if (nominalVoltage) {
+          // Assume series configuration for max voltage
+          // In real scenarios, the app would detect cell configuration
+          voltagePerCell.push(nominalVoltage.value);
+          maxBatteryVoltage += nominalVoltage.value;
+        }
+      }
+    }
+
+    if (maxBatteryVoltage > 0) {
+      links.push({
+        component: batteries[0],
+        constraintType: 'voltage_limit',
+        maxValue: maxBatteryVoltage,
+        unit: 'V',
+        isBottleneck: false,
+        explanation: `${batteries.length} cell(s) in series: max ${maxBatteryVoltage}V (${voltagePerCell.join('V + ')}V)`,
+        sourceSpec: 'nominal_voltage',
+      });
+    }
+  }
+
+  // Find voltage regulators
+  const regulators = components.filter((c) =>
+    c.specs?.category === 'dc_dc' ||
+    (c.specs?.specs['output_voltage'] !== undefined)
+  );
+
+  for (const regulator of regulators) {
+    if (regulator.specs && regulator !== dcdc) {
+      const outputVoltage = regulator.specs.specs['output_voltage'];
+      if (outputVoltage) {
+        links.push({
+          component: regulator,
+          constraintType: 'voltage_limit',
+          maxValue: outputVoltage.max || outputVoltage.value,
+          unit: 'V',
+          isBottleneck: false,
+          explanation: `${regulator.specs.partNumber}: regulated ${outputVoltage.value}V output`,
+          sourceSpec: 'output_voltage',
+        });
+      }
+    }
+  }
+
   return finalizeChain(claim, links);
 }
 
