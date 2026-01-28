@@ -59,17 +59,21 @@ function toCommunitySubmission(row: SubmissionWithUser): CommunitySubmission {
 }
 
 /**
- * Create a hash from listing URL for fast lookups
+ * Create a secure hash from listing URL for fast lookups
+ * Uses SHA-256 for collision resistance (available in Cloudflare Workers)
  */
-function hashListingUrl(url: string): string {
-  // Simple hash for URL - in production, use crypto
-  let hash = 0;
-  for (let i = 0; i < url.length; i++) {
-    const char = url.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  return Math.abs(hash).toString(16);
+async function hashListingUrl(url: string): Promise<string> {
+  // Normalize the URL to ensure consistent hashing
+  const normalizedUrl = url.toLowerCase().trim();
+
+  // Use Web Crypto API (available in Cloudflare Workers)
+  const encoder = new TextEncoder();
+  const data = encoder.encode(normalizedUrl);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+
+  // Convert to hex string (first 16 bytes = 32 chars for reasonable length)
+  const hashArray = Array.from(new Uint8Array(hashBuffer).slice(0, 16));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -80,13 +84,16 @@ export async function createSubmission(
   submission: SubmitRequest,
   userId?: string
 ): Promise<CommunitySubmission> {
+  // Generate URL hash if listing URL provided
+  const urlHash = submission.listingUrl
+    ? await hashListingUrl(submission.listingUrl)
+    : null;
+
   const row = {
     user_id: userId || null,
     product_name: submission.productName,
     listing_url: submission.listingUrl || null,
-    listing_url_hash: submission.listingUrl
-      ? hashListingUrl(submission.listingUrl)
-      : null,
+    listing_url_hash: urlHash,
     claimed_specs: submission.claimedSpecs,
     actual_specs: submission.actualSpecs,
     verdict: submission.verdict,
@@ -189,7 +196,7 @@ export async function getSubmissionsByListingUrl(
   client: SupabaseClient,
   listingUrl: string
 ): Promise<CommunitySubmission[]> {
-  const urlHash = hashListingUrl(listingUrl);
+  const urlHash = await hashListingUrl(listingUrl);
 
   const { data, error } = await client
     .from(tables.submissions)

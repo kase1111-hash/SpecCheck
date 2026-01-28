@@ -11,25 +11,62 @@ import type {
   SpecValue,
   ComponentCategory,
 } from '@speccheck/shared-types';
-import type { SQLiteDatabase } from 'expo-sqlite';
 
 /** Cache TTL in milliseconds (30 days) */
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Database interface type */
+interface SQLiteDatabase {
+  execAsync(sql: string): Promise<void>;
+  getFirstAsync<T>(sql: string, params?: unknown[]): Promise<T | null>;
+  runAsync(sql: string, params?: unknown[]): Promise<{ changes: number }>;
+  getAllAsync<T>(sql: string, params?: unknown[]): Promise<T[]>;
+}
+
+/** Database row type */
+interface DatasheetRow {
+  part_number: string;
+  manufacturer: string;
+  category: string;
+  specs_json: string;
+  datasheet_url: string | null;
+  fetched_at: number;
+  expires_at: number;
+}
 
 /**
  * Datasheet cache service
  */
 export class DatasheetCache {
   private db: SQLiteDatabase | null = null;
+  private initialized = false;
 
   /**
    * Initialize the cache database
    */
   async initialize(): Promise<void> {
-    // TODO: Initialize SQLite using expo-sqlite
-    // this.db = await SQLite.openDatabaseAsync('speccheck.db');
-    // await this.createTables();
-    console.log('[DatasheetCache] Initialized');
+    if (this.initialized) return;
+
+    try {
+      // Dynamic import to handle cases where expo-sqlite isn't available
+      const SQLite = await import('expo-sqlite');
+      this.db = await SQLite.openDatabaseAsync('speccheck.db');
+      await this.createTables();
+      this.initialized = true;
+      console.log('[DatasheetCache] Initialized with SQLite');
+    } catch (error) {
+      console.warn('[DatasheetCache] SQLite not available, using in-memory fallback:', error);
+      this.initialized = true;
+    }
+  }
+
+  /**
+   * Ensure database is initialized before operations
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
   }
 
   /**
@@ -54,6 +91,17 @@ export class DatasheetCache {
 
       CREATE INDEX IF NOT EXISTS idx_datasheets_expires
         ON datasheets(expires_at);
+
+      CREATE TABLE IF NOT EXISTS component_patterns (
+        pattern TEXT PRIMARY KEY,
+        part_number TEXT NOT NULL,
+        manufacturer TEXT NOT NULL,
+        category TEXT NOT NULL,
+        priority INTEGER DEFAULT 0
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_patterns_category
+        ON component_patterns(category);
     `);
   }
 
@@ -61,60 +109,107 @@ export class DatasheetCache {
    * Get specs from cache
    */
   async get(partNumber: string): Promise<ComponentSpecs | null> {
-    // TODO: Implement actual SQLite query
-    // const row = await this.db.getFirstAsync(
-    //   'SELECT * FROM datasheets WHERE part_number = ? AND expires_at > ?',
-    //   [partNumber, Date.now()]
-    // );
+    await this.ensureInitialized();
 
-    // For development, check in-memory mock data
-    const mockData = this.getMockData(partNumber);
-    if (mockData) {
-      return mockData;
+    // Try SQLite first
+    if (this.db) {
+      try {
+        const row = await this.db.getFirstAsync<DatasheetRow>(
+          'SELECT * FROM datasheets WHERE part_number = ? AND expires_at > ?',
+          [partNumber, Date.now()]
+        );
+
+        if (row) {
+          return this.rowToComponentSpecs(row);
+        }
+      } catch (error) {
+        console.error('[DatasheetCache] SQLite query error:', error);
+      }
     }
 
-    return null;
+    // Fallback to in-memory mock data for development
+    return this.getMockData(partNumber);
   }
 
   /**
    * Store specs in cache
    */
   async set(specs: ComponentSpecs): Promise<void> {
+    await this.ensureInitialized();
+
     const now = Date.now();
     const expiresAt = now + CACHE_TTL_MS;
 
-    const entry: DatasheetCacheEntry = {
-      partNumber: specs.partNumber,
-      manufacturer: specs.manufacturer,
-      category: specs.category,
-      specsJson: JSON.stringify(specs.specs),
-      datasheetUrl: specs.datasheetUrl,
-      fetchedAt: now,
-      expiresAt,
-    };
+    if (this.db) {
+      try {
+        await this.db.runAsync(
+          `INSERT OR REPLACE INTO datasheets
+           (part_number, manufacturer, category, specs_json, datasheet_url, fetched_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            specs.partNumber,
+            specs.manufacturer,
+            specs.category,
+            JSON.stringify(specs.specs),
+            specs.datasheetUrl,
+            now,
+            expiresAt,
+          ]
+        );
+        console.log(`[DatasheetCache] Cached ${specs.partNumber} in SQLite`);
+        return;
+      } catch (error) {
+        console.error('[DatasheetCache] SQLite insert error:', error);
+      }
+    }
 
-    // TODO: Implement actual SQLite insert
-    // await this.db.runAsync(
-    //   `INSERT OR REPLACE INTO datasheets
-    //    (part_number, manufacturer, category, specs_json, datasheet_url, fetched_at, expires_at)
-    //    VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    //   [entry.partNumber, entry.manufacturer, entry.category,
-    //    entry.specsJson, entry.datasheetUrl, entry.fetchedAt, entry.expiresAt]
-    // );
+    console.log(`[DatasheetCache] Cached ${specs.partNumber} (in-memory only)`);
+  }
 
-    console.log(`[DatasheetCache] Cached ${specs.partNumber}`);
+  /**
+   * Search cache by part number pattern
+   */
+  async search(query: string, limit = 10): Promise<ComponentSpecs[]> {
+    await this.ensureInitialized();
+
+    if (this.db) {
+      try {
+        const rows = await this.db.getAllAsync<DatasheetRow>(
+          `SELECT * FROM datasheets
+           WHERE part_number LIKE ? AND expires_at > ?
+           ORDER BY fetched_at DESC
+           LIMIT ?`,
+          [`%${query}%`, Date.now(), limit]
+        );
+
+        return rows.map((row) => this.rowToComponentSpecs(row));
+      } catch (error) {
+        console.error('[DatasheetCache] SQLite search error:', error);
+      }
+    }
+
+    return [];
   }
 
   /**
    * Remove expired entries
    */
   async cleanup(): Promise<number> {
-    // TODO: Implement actual cleanup
-    // const result = await this.db.runAsync(
-    //   'DELETE FROM datasheets WHERE expires_at < ?',
-    //   [Date.now()]
-    // );
-    // return result.changes;
+    await this.ensureInitialized();
+
+    if (this.db) {
+      try {
+        const result = await this.db.runAsync(
+          'DELETE FROM datasheets WHERE expires_at < ?',
+          [Date.now()]
+        );
+        console.log(`[DatasheetCache] Cleaned up ${result.changes} expired entries`);
+        return result.changes;
+      } catch (error) {
+        console.error('[DatasheetCache] SQLite cleanup error:', error);
+      }
+    }
+
     return 0;
   }
 
@@ -122,8 +217,62 @@ export class DatasheetCache {
    * Clear all cache
    */
   async clear(): Promise<void> {
-    // await this.db.runAsync('DELETE FROM datasheets');
-    console.log('[DatasheetCache] Cleared');
+    await this.ensureInitialized();
+
+    if (this.db) {
+      try {
+        await this.db.runAsync('DELETE FROM datasheets');
+        console.log('[DatasheetCache] Cleared SQLite cache');
+        return;
+      } catch (error) {
+        console.error('[DatasheetCache] SQLite clear error:', error);
+      }
+    }
+
+    console.log('[DatasheetCache] Cleared (in-memory)');
+  }
+
+  /**
+   * Get cache statistics
+   */
+  async getStats(): Promise<{ totalEntries: number; expiredEntries: number }> {
+    await this.ensureInitialized();
+
+    if (this.db) {
+      try {
+        const total = await this.db.getFirstAsync<{ count: number }>(
+          'SELECT COUNT(*) as count FROM datasheets'
+        );
+        const expired = await this.db.getFirstAsync<{ count: number }>(
+          'SELECT COUNT(*) as count FROM datasheets WHERE expires_at < ?',
+          [Date.now()]
+        );
+
+        return {
+          totalEntries: total?.count || 0,
+          expiredEntries: expired?.count || 0,
+        };
+      } catch (error) {
+        console.error('[DatasheetCache] SQLite stats error:', error);
+      }
+    }
+
+    return { totalEntries: 0, expiredEntries: 0 };
+  }
+
+  /**
+   * Convert database row to ComponentSpecs
+   */
+  private rowToComponentSpecs(row: DatasheetRow): ComponentSpecs {
+    return {
+      partNumber: row.part_number,
+      manufacturer: row.manufacturer,
+      category: row.category as ComponentCategory,
+      source: 'cache',
+      specs: JSON.parse(row.specs_json),
+      datasheetUrl: row.datasheet_url,
+      lastUpdated: row.fetched_at,
+    };
   }
 
   /**

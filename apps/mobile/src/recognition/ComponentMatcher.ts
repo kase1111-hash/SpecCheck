@@ -14,6 +14,7 @@ import type {
   ComponentCategory,
 } from '@speccheck/shared-types';
 import { getOCREngine } from './OCREngine';
+import { getDatasheetCache } from '../datasheet/DatasheetCache';
 
 /**
  * Confidence thresholds
@@ -141,12 +142,34 @@ export class ComponentMatcher {
     category: ComponentCategory;
     datasheetId: string;
   } | null> {
-    // TODO: Implement local SQLite cache lookup
-    // const db = await getDatabase();
-    // const result = await db.getFirstAsync(
-    //   'SELECT * FROM datasheets WHERE part_number = ?',
-    //   [partNumber]
-    // );
+    try {
+      const cache = getDatasheetCache();
+      const specs = await cache.get(partNumber);
+
+      if (specs) {
+        return {
+          partNumber: specs.partNumber,
+          manufacturer: specs.manufacturer,
+          category: specs.category,
+          datasheetId: `cache_${specs.partNumber}`,
+        };
+      }
+
+      // Also try search for partial matches
+      const searchResults = await cache.search(partNumber, 1);
+      if (searchResults.length > 0) {
+        const match = searchResults[0];
+        return {
+          partNumber: match.partNumber,
+          manufacturer: match.manufacturer,
+          category: match.category,
+          datasheetId: `cache_${match.partNumber}`,
+        };
+      }
+    } catch (error) {
+      console.error('[ComponentMatcher] Cache lookup error:', error);
+    }
+
     return null;
   }
 

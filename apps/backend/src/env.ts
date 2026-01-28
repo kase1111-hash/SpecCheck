@@ -15,6 +15,7 @@ export interface Env {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
   ANTHROPIC_API_KEY: string;
+  ADMIN_API_KEY?: string; // Optional admin API key for elevated access
   ENVIRONMENT: 'development' | 'staging' | 'production';
 }
 
