@@ -25,5 +25,4 @@ export interface Env {
  */
 export const CACHE_TTL = {
   DATASHEET: 60 * 60 * 24, // 24 hours
-  SEARCH_RESULTS: 60 * 5, // 5 minutes
 } as const;

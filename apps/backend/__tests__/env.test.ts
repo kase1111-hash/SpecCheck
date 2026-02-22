@@ -10,10 +10,5 @@ describe('Environment Config', () => {
       expect(CACHE_TTL.DATASHEET).toBe(60 * 60 * 24);
       expect(CACHE_TTL.DATASHEET).toBe(86400);
     });
-
-    it('has correct search results TTL (5 minutes)', () => {
-      expect(CACHE_TTL.SEARCH_RESULTS).toBe(60 * 5);
-      expect(CACHE_TTL.SEARCH_RESULTS).toBe(300);
-    });
   });
 });
