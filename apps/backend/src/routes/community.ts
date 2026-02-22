@@ -23,6 +23,20 @@ import {
 
 export const communityRoutes = new Hono<AppEnv>();
 
+const VALID_VERDICTS = ['plausible', 'impossible', 'uncertain'];
+const MAX_PRODUCT_NAME_LENGTH = 200;
+const MAX_LISTING_URL_LENGTH = 2048;
+const MAX_IMAGES = 10;
+
+function isValidHttpUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Submit a new verification
  */
@@ -31,22 +45,44 @@ communityRoutes.post('/submit', async (c) => {
   const storage = c.get('storageService');
   const env = c.env;
 
-  // Validate required fields
+  // Validate required fields with length limits
   if (!body.productName || body.productName.trim().length === 0) {
     return c.json({ error: 'Product name is required' }, 400);
+  }
+  if (body.productName.length > MAX_PRODUCT_NAME_LENGTH) {
+    return c.json({ error: `Product name too long (max ${MAX_PRODUCT_NAME_LENGTH} characters)` }, 400);
   }
 
   if (!body.verdict || body.verdict.trim().length === 0) {
     return c.json({ error: 'Verdict is required' }, 400);
   }
+  if (!VALID_VERDICTS.includes(body.verdict.trim())) {
+    return c.json({ error: `Verdict must be one of: ${VALID_VERDICTS.join(', ')}` }, 400);
+  }
+
+  if (body.listingUrl) {
+    if (body.listingUrl.length > MAX_LISTING_URL_LENGTH) {
+      return c.json({ error: `Listing URL too long (max ${MAX_LISTING_URL_LENGTH} characters)` }, 400);
+    }
+    if (!isValidHttpUrl(body.listingUrl)) {
+      return c.json({ error: 'Invalid listing URL' }, 400);
+    }
+  }
+
+  if (body.images && body.images.length > MAX_IMAGES) {
+    return c.json({ error: `Too many images (max ${MAX_IMAGES})` }, 400);
+  }
+
+  // Sanitize string fields
+  body.productName = body.productName.trim().slice(0, MAX_PRODUCT_NAME_LENGTH);
+  body.verdict = body.verdict.trim();
 
   try {
-    // Upload base64 images to R2 if provided
+    // Upload base64 images to R2 — only accept base64 data, reject external URLs (SSRF protection)
     const imageUrls: string[] = [];
     if (body.images && body.images.length > 0) {
       for (let i = 0; i < body.images.length; i++) {
         const imageData = body.images[i];
-        // Check if it's base64 or already a URL
         if (imageData.startsWith('data:') || !imageData.startsWith('http')) {
           const contentType = imageData.match(/^data:([^;]+);/)?.[1] || 'image/jpeg';
           const url = await storage.uploadBase64Image(
@@ -56,8 +92,8 @@ communityRoutes.post('/submit', async (c) => {
           );
           imageUrls.push(url);
         } else {
-          // Already a URL, keep as-is
-          imageUrls.push(imageData);
+          // Reject external URLs to prevent SSRF
+          console.warn('[Community] Rejected external image URL in submission');
         }
       }
     }
