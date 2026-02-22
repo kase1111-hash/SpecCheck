@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
+import { AppState } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StyleSheet } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
+import { cleanupResources } from '../src/lifecycle';
 
 // Prevent splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();
@@ -12,10 +14,19 @@ export default function RootLayout() {
   useEffect(() => {
     // Hide splash screen after app is ready
     const prepare = async () => {
-      // TODO: Load fonts, initialize stores, warm up ML models
       await SplashScreen.hideAsync();
     };
     prepare();
+  }, []);
+
+  // Clean up singleton resources when app enters background
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'background') {
+        cleanupResources();
+      }
+    });
+    return () => subscription.remove();
   }, []);
 
   return (

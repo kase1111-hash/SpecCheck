@@ -54,27 +54,6 @@ export const RATE_LIMITS = {
 } as const;
 
 /**
- * In-memory rate limit store for development/fallback
- * Maps: key -> { count, windowStart }
- */
-const memoryStore = new Map<string, { count: number; windowStart: number }>();
-
-/**
- * Clean up expired entries from memory store
- */
-function cleanupMemoryStore(): void {
-  const now = Date.now();
-  for (const [key, value] of memoryStore.entries()) {
-    if (now - value.windowStart > 120000) { // 2 minutes
-      memoryStore.delete(key);
-    }
-  }
-}
-
-// Run cleanup every minute
-setInterval(cleanupMemoryStore, 60000);
-
-/**
  * Get client identifier for rate limiting
  */
 function getClientKey(c: Context<AppEnv>): string {
@@ -94,6 +73,13 @@ function getClientKey(c: Context<AppEnv>): string {
 /**
  * Check and update rate limit using KV or memory store
  */
+/**
+ * Check and update rate limit using KV.
+ *
+ * Note: KV read-then-write is not atomic. Under extreme concurrency some
+ * requests may slip through. For strict rate limiting, migrate to Durable
+ * Objects. KV entries auto-expire via expirationTtl — no manual cleanup needed.
+ */
 async function checkRateLimit(
   c: Context<AppEnv>,
   key: string,
@@ -101,69 +87,46 @@ async function checkRateLimit(
 ): Promise<{ allowed: boolean; remaining: number; resetAt: number }> {
   const now = Date.now();
   const windowMs = config.windowSeconds * 1000;
-
-  // Try to use KV if available
   const kv = c.env?.DATASHEET_CACHE;
 
-  if (kv) {
-    try {
-      const stored = await kv.get(key, 'json') as { count: number; windowStart: number } | null;
+  if (!kv) {
+    // No KV available — fail open but log warning
+    console.warn('[RateLimit] KV namespace not available, skipping rate limit');
+    return { allowed: true, remaining: config.maxRequests, resetAt: now + windowMs };
+  }
 
-      let count: number;
-      let windowStart: number;
+  try {
+    const stored = await kv.get(key, 'json') as { count: number; windowStart: number } | null;
 
-      if (!stored || now - stored.windowStart >= windowMs) {
-        // New window
-        count = 1;
-        windowStart = now;
-      } else {
-        // Existing window
-        count = stored.count + 1;
-        windowStart = stored.windowStart;
-      }
+    let count: number;
+    let windowStart: number;
 
-      // Store updated count
-      await kv.put(key, JSON.stringify({ count, windowStart }), {
-        expirationTtl: config.windowSeconds + 60, // TTL slightly longer than window
-      });
-
-      const resetAt = windowStart + windowMs;
-      const remaining = Math.max(0, config.maxRequests - count);
-
-      return {
-        allowed: count <= config.maxRequests,
-        remaining,
-        resetAt,
-      };
-    } catch (error) {
-      console.error('[RateLimit] KV error, falling back to memory:', error);
+    if (!stored || now - stored.windowStart >= windowMs) {
+      count = 1;
+      windowStart = now;
+    } else {
+      count = stored.count + 1;
+      windowStart = stored.windowStart;
     }
+
+    // Store with TTL for automatic cleanup — no setInterval needed
+    await kv.put(key, JSON.stringify({ count, windowStart }), {
+      expirationTtl: config.windowSeconds + 60,
+    });
+
+    const resetAt = windowStart + windowMs;
+    const remaining = Math.max(0, config.maxRequests - count);
+
+    return {
+      allowed: count <= config.maxRequests,
+      remaining,
+      resetAt,
+    };
+  } catch (error) {
+    console.error('[RateLimit] KV error:', error);
+    // On KV failure, fail open — allow the request but log
+    return { allowed: true, remaining: config.maxRequests, resetAt: now + windowMs };
   }
-
-  // Fallback to memory store
-  const stored = memoryStore.get(key);
-
-  let count: number;
-  let windowStart: number;
-
-  if (!stored || now - stored.windowStart >= windowMs) {
-    count = 1;
-    windowStart = now;
-  } else {
-    count = stored.count + 1;
-    windowStart = stored.windowStart;
-  }
-
-  memoryStore.set(key, { count, windowStart });
-
-  const resetAt = windowStart + windowMs;
-  const remaining = Math.max(0, config.maxRequests - count);
-
-  return {
-    allowed: count <= config.maxRequests,
-    remaining,
-    resetAt,
-  };
 }
 
 /**

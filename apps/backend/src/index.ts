@@ -27,6 +27,7 @@ import {
 } from './middleware/rateLimit';
 import { requireAuth, optionalAuth, spamProtection } from './middleware/auth';
 import type { AuthResult } from './middleware/auth';
+import { requestLogger } from './middleware/logger';
 import type { Env } from './env';
 
 /**
@@ -39,6 +40,7 @@ export type AppEnv = {
     llmService: LLMService;
     storageService: StorageService;
     auth: AuthResult;
+    requestId: string;
   };
 };
 
@@ -59,6 +61,9 @@ app.use('/*', async (c, next) => {
     allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
   })(c, next);
 });
+
+// Structured request logging
+app.use('/*', requestLogger);
 
 // Global body size limit (5MB default)
 app.use('/*', bodyLimit({ maxSize: 5 * 1024 * 1024 }));
