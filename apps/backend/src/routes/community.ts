@@ -141,7 +141,10 @@ communityRoutes.get('/search', async (c) => {
     });
   } catch (error) {
     console.error('Search failed:', error);
-    return c.json({ results: [], totalCount: 0, hasMore: false }, 500);
+    return c.json({
+      error: 'Search failed',
+      message: 'Unable to search submissions. Please try again.',
+    }, 500);
   }
 });
 
@@ -163,7 +166,10 @@ communityRoutes.get('/recent', async (c) => {
     });
   } catch (error) {
     console.error('Failed to fetch recent submissions:', error);
-    return c.json({ results: [], hasMore: false }, 500);
+    return c.json({
+      error: 'Fetch failed',
+      message: 'Unable to load recent submissions. Please try again.',
+    }, 500);
   }
 });
 
@@ -180,13 +186,13 @@ communityRoutes.get('/listing/:urlHash', async (c) => {
     const results = await searchSubmissions(db, urlHash, undefined, 10, 0);
 
     if (results.length === 0) {
-      return c.json(null, 404);
+      return c.json({ error: 'Listing not found' }, 404);
     }
 
     return c.json(results[0]);
   } catch (error) {
-    console.error('Failed to fetch submission:', error);
-    return c.json(null, 500);
+    console.error('Failed to fetch listing:', error);
+    return c.json({ error: 'Failed to fetch listing' }, 500);
   }
 });
 

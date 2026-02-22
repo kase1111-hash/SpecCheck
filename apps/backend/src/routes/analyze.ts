@@ -28,8 +28,18 @@ analyzeRoutes.post('/claim', async (c) => {
     return c.json({ error: 'At least one component is required' }, 400);
   }
 
-  // Run LLM analysis
-  const result = await service.analyzeClaim(body);
-
-  return c.json(result);
+  try {
+    const result = await service.analyzeClaim(body);
+    return c.json(result);
+  } catch (error) {
+    console.error('Analyze claim failed:', error);
+    return c.json(
+      {
+        error: 'Analysis service unavailable',
+        message: 'The analysis service is temporarily unavailable. Please try again later.',
+        retryable: true,
+      },
+      503
+    );
+  }
 });
