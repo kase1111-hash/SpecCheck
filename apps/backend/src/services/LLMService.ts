@@ -33,6 +33,9 @@ const MAX_RETRIES = 3;
 /** Base delay in ms for exponential backoff */
 const BASE_DELAY_MS = 1000;
 
+/** Request timeout in milliseconds */
+const REQUEST_TIMEOUT_MS = 30_000;
+
 export class LLMService {
   private apiKey: string;
   private model: string;
@@ -64,6 +67,9 @@ export class LLMService {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
       try {
         const response = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
@@ -82,7 +88,10 @@ export class LLMService {
               },
             ],
           }),
+          signal: controller.signal,
         });
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
           const error = await response.text();
@@ -113,17 +122,25 @@ export class LLMService {
         const result = this.parseResponse(textContent.text);
         return result;
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
+        clearTimeout(timeoutId);
 
-        // Retry on network errors with exponential backoff
-        if (
-          attempt < MAX_RETRIES &&
-          (error instanceof TypeError || // Network errors often throw TypeError
-            (error instanceof Error && error.message.includes('fetch')))
-        ) {
+        // Handle abort/timeout specifically
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          lastError = new Error('Claude API request timed out');
+        } else {
+          lastError = error instanceof Error ? error : new Error(String(error));
+        }
+
+        // Retry on transient errors (network, timeout) with exponential backoff
+        const isRetryable =
+          (error instanceof DOMException && error.name === 'AbortError') ||
+          error instanceof TypeError ||
+          (error instanceof Error && error.message.includes('fetch'));
+
+        if (attempt < MAX_RETRIES && isRetryable) {
           const delayMs = BASE_DELAY_MS * Math.pow(2, attempt);
           console.warn(
-            `Network error (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying in ${delayMs}ms: ${lastError.message}`
+            `Transient error (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying in ${delayMs}ms: ${lastError.message}`
           );
           await this.sleep(delayMs);
           continue;
@@ -134,16 +151,11 @@ export class LLMService {
       }
     }
 
-    console.error('LLM analysis failed after retries:', lastError);
-
-    // Return uncertain verdict on error
-    return {
-      verdict: 'uncertain',
-      maxPossible: 0,
-      unit: request.claim.unit,
-      reasoning: `Analysis failed: ${lastError?.message || 'Unknown error'}`,
-      chain: [],
-    };
+    // Throw instead of returning a fake "uncertain" verdict — let the caller
+    // decide how to respond (503, error UI, etc.)
+    throw new Error(
+      `LLM analysis failed after ${MAX_RETRIES + 1} attempts: ${lastError?.message || 'Unknown error'}`
+    );
   }
 
   /**

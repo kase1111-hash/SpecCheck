@@ -11,6 +11,7 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { bodyLimit } from 'hono/body-limit';
 import { datasheetRoutes } from './routes/datasheet';
 import { analyzeRoutes } from './routes/analyze';
 import { communityRoutes } from './routes/community';
@@ -24,7 +25,9 @@ import {
   rateLimitSubmit,
   rateLimitSearch,
 } from './middleware/rateLimit';
-import { auth } from './middleware/auth';
+import { requireAuth, optionalAuth, spamProtection } from './middleware/auth';
+import type { AuthResult } from './middleware/auth';
+import { requestLogger } from './middleware/logger';
 import type { Env } from './env';
 
 /**
@@ -36,17 +39,34 @@ export type AppEnv = {
     datasheetService: DatasheetService;
     llmService: LLMService;
     storageService: StorageService;
+    auth: AuthResult;
+    requestId: string;
   };
 };
 
 const app = new Hono<AppEnv>();
 
-// CORS middleware
-app.use('/*', cors({
-  origin: ['http://localhost:8081', 'https://speccheck.app'],
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
-}));
+// CORS middleware — environment-aware origins
+app.use('/*', async (c, next) => {
+  const environment = c.env.ENVIRONMENT || 'production';
+  const origins: string[] = ['https://speccheck.app'];
+
+  if (environment === 'development') {
+    origins.push('http://localhost:8081');
+  }
+
+  return cors({
+    origin: origins,
+    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+  })(c, next);
+});
+
+// Structured request logging
+app.use('/*', requestLogger);
+
+// Global body size limit (5MB default)
+app.use('/*', bodyLimit({ maxSize: 5 * 1024 * 1024 }));
 
 // Initialize services middleware
 app.use('/*', async (c, next) => {
@@ -70,15 +90,21 @@ app.get('/', (c) => c.json({ status: 'ok', service: 'speccheck-api' }));
 // Datasheet routes - higher limits for read-heavy operations
 app.use('/api/datasheet/*', rateLimitDatasheet);
 
-// Analyze routes - lower limits for expensive LLM operations
+// Analyze routes - lower limits for expensive LLM operations, auth required
 app.use('/api/analyze/*', rateLimitAnalyze);
-app.use('/api/analyze/*', auth);
+app.use('/api/analyze/*', requireAuth);
 
 // Community routes - different limits for different operations
 app.use('/api/community/search', rateLimitSearch);
+app.use('/api/community/search', optionalAuth);
 app.use('/api/community/recent', rateLimitSearch);
+app.use('/api/community/recent', optionalAuth);
+
+// Submit route: larger body limit for images, spam protection, auth required
+app.use('/api/community/submit', bodyLimit({ maxSize: 20 * 1024 * 1024 }));
 app.use('/api/community/submit', rateLimitSubmit);
-app.use('/api/community/submit', auth);
+app.use('/api/community/submit', spamProtection);
+app.use('/api/community/submit', requireAuth);
 
 // Mount routes
 app.route('/api/datasheet', datasheetRoutes);

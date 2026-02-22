@@ -97,14 +97,24 @@ export class ComponentDetector {
       await this.model.loadModel();
 
       this.isModelLoaded = true;
+      this.useMockDetections = false;
       console.log('[ComponentDetector] Model loaded successfully');
     } catch (error) {
       console.error('[ComponentDetector] Failed to load model:', error);
 
-      // Enable mock detections as fallback
-      this.useMockDetections = true;
-      this.isModelLoaded = true;
-      console.log('[ComponentDetector] Using mock detections as fallback');
+      // In development, fall back to mock detections for UI work
+      if (__DEV__) {
+        this.useMockDetections = true;
+        this.isModelLoaded = true;
+        console.warn('[ComponentDetector] DEV MODE: Using mock detections as fallback');
+      } else {
+        // In production, fail honestly — do not pretend the model loaded
+        this.isModelLoaded = false;
+        this.useMockDetections = false;
+        throw new Error(
+          'Component detection model failed to load. Please update the app or try again later.'
+        );
+      }
     }
   }
 

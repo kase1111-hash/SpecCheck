@@ -61,16 +61,24 @@ export class StorageService {
   }
 
   /**
-   * Upload multiple images
-   * Returns array of public URLs
+   * Upload multiple images with bounded concurrency.
+   * Limits to 3 concurrent R2 uploads to avoid overwhelming the bucket.
    */
   async uploadImages(
     files: Array<{ data: ArrayBuffer; filename: string; contentType: string }>
   ): Promise<string[]> {
-    const urls = await Promise.all(
-      files.map((file) => this.uploadImage(file.data, file.filename, file.contentType))
-    );
-    return urls;
+    const MAX_CONCURRENT = 3;
+    const results: string[] = [];
+
+    for (let i = 0; i < files.length; i += MAX_CONCURRENT) {
+      const batch = files.slice(i, i + MAX_CONCURRENT);
+      const urls = await Promise.all(
+        batch.map((file) => this.uploadImage(file.data, file.filename, file.contentType))
+      );
+      results.push(...urls);
+    }
+
+    return results;
   }
 
   /**
@@ -108,19 +116,26 @@ export class StorageService {
   }
 
   /**
-   * Delete multiple images
+   * Delete multiple images with bounded concurrency
    */
   async deleteImages(keys: string[]): Promise<{ deleted: string[]; failed: string[] }> {
-    const results = await Promise.all(
-      keys.map(async (key) => ({
-        key,
-        success: await this.deleteImage(key),
-      }))
-    );
+    const MAX_CONCURRENT = 3;
+    const allResults: Array<{ key: string; success: boolean }> = [];
+
+    for (let i = 0; i < keys.length; i += MAX_CONCURRENT) {
+      const batch = keys.slice(i, i + MAX_CONCURRENT);
+      const results = await Promise.all(
+        batch.map(async (key) => ({
+          key,
+          success: await this.deleteImage(key),
+        }))
+      );
+      allResults.push(...results);
+    }
 
     return {
-      deleted: results.filter((r) => r.success).map((r) => r.key),
-      failed: results.filter((r) => !r.success).map((r) => r.key),
+      deleted: allResults.filter((r) => r.success).map((r) => r.key),
+      failed: allResults.filter((r) => !r.success).map((r) => r.key),
     };
   }
 

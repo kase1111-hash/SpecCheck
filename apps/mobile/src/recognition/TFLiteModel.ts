@@ -144,62 +144,15 @@ export class TFLiteModel {
         }
       }
 
-      // If no model provided or loading failed, create a placeholder model
       if (!this.model) {
-        console.log('[TFLiteModel] Creating placeholder model for development');
-        this.model = await this.createPlaceholderModel();
+        throw new Error('No detection model available. Model file not found or failed to load.');
       }
 
       console.log('[TFLiteModel] Model loaded successfully');
     } catch (error) {
-      console.warn('[TFLiteModel] Model loading failed, using placeholder:', error);
-      this.model = await this.createPlaceholderModel();
+      console.error('[TFLiteModel] Model loading failed:', error);
+      throw error instanceof Error ? error : new Error(`Model loading failed: ${error}`);
     }
-  }
-
-  /**
-   * Create a placeholder model for development/testing
-   * This simulates the model interface without actual weights
-   */
-  private async createPlaceholderModel(): Promise<tf.LayersModel> {
-    const { inputWidth, inputHeight, inputChannels, numClasses } = this.config;
-
-    // Create a simple model that outputs detection-like results
-    const input = tf.input({
-      shape: [inputHeight, inputWidth, inputChannels],
-      name: 'input',
-    });
-
-    // Simple conv layers for feature extraction
-    let x = tf.layers.conv2d({
-      filters: 16,
-      kernelSize: 3,
-      strides: 2,
-      padding: 'same',
-      activation: 'relu',
-    }).apply(input) as tf.SymbolicTensor;
-
-    x = tf.layers.conv2d({
-      filters: 32,
-      kernelSize: 3,
-      strides: 2,
-      padding: 'same',
-      activation: 'relu',
-    }).apply(x) as tf.SymbolicTensor;
-
-    // Global pooling
-    x = tf.layers.globalAveragePooling2d({}).apply(x) as tf.SymbolicTensor;
-
-    // Output: [batch, numClasses + 5] for each detection
-    // 5 = 4 bbox coords + 1 objectness
-    const output = tf.layers.dense({
-      units: (numClasses + 5) * this.config.maxDetections,
-      activation: 'sigmoid',
-      name: 'output',
-    }).apply(x) as tf.SymbolicTensor;
-
-    const model = tf.model({ inputs: input, outputs: output });
-    return model;
   }
 
   /**

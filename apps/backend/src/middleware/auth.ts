@@ -6,6 +6,7 @@
  */
 
 import type { Context, Next } from 'hono';
+import { verify } from 'hono/jwt';
 import type { AppEnv } from '../index';
 
 /**
@@ -72,31 +73,26 @@ async function verifyApiKey(
 }
 
 /**
- * Parse and verify JWT token
- * Simplified implementation - in production use a proper JWT library
+ * Parse and verify JWT token using cryptographic signature verification
  */
 async function verifyJwt(
   c: Context<AppEnv>,
   token: string
 ): Promise<{ valid: boolean; userId: string | null }> {
   try {
-    // Simple JWT structure check
-    const parts = token.split('.');
-    if (parts.length !== 3) {
+    const secret = c.env?.JWT_SECRET;
+    if (!secret) {
+      console.error('[Auth] JWT_SECRET not configured — rejecting token');
       return { valid: false, userId: null };
     }
 
-    // Decode payload (base64url)
-    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    // verify() checks structure, signature, and expiration
+    const payload = await verify(token, secret, 'HS256');
 
-    // Check expiration
-    if (payload.exp && payload.exp < Date.now() / 1000) {
-      return { valid: false, userId: null };
-    }
-
-    // In production, verify signature using secret key
-    // For now, trust the token structure
-    return { valid: true, userId: payload.sub || payload.userId || null };
+    return {
+      valid: true,
+      userId: (payload.sub as string) || (payload.userId as string) || null,
+    };
   } catch {
     return { valid: false, userId: null };
   }
@@ -156,7 +152,7 @@ export async function auth(c: Context<AppEnv>, next: Next) {
   const authResult = await extractAuth(c);
 
   // Set auth info on context
-  c.set('auth' as never, authResult);
+  c.set('auth', authResult);
 
   // Set session cookie if not present
   if (authResult.method === 'session' && !c.req.header('Cookie')?.includes('speccheck_session')) {
@@ -183,7 +179,7 @@ export async function requireAuth(c: Context<AppEnv>, next: Next) {
     );
   }
 
-  c.set('auth' as never, authResult);
+  c.set('auth', authResult);
   await next();
 }
 
@@ -194,7 +190,7 @@ export async function requireAuth(c: Context<AppEnv>, next: Next) {
  */
 export async function optionalAuth(c: Context<AppEnv>, next: Next) {
   const authResult = await extractAuth(c);
-  c.set('auth' as never, authResult);
+  c.set('auth', authResult);
 
   // Set session cookie
   if (!c.req.header('Cookie')?.includes('speccheck_session')) {
@@ -213,7 +209,7 @@ export async function spamProtection(c: Context<AppEnv>, next: Next) {
 
   // Authenticated users bypass spam checks
   if (authResult.authenticated) {
-    c.set('auth' as never, authResult);
+    c.set('auth', authResult);
     await next();
     return;
   }
@@ -262,7 +258,7 @@ export async function spamProtection(c: Context<AppEnv>, next: Next) {
     await kv.put(submissionKey, Date.now().toString(), { expirationTtl: 60 });
   }
 
-  c.set('auth' as never, authResult);
+  c.set('auth', authResult);
   await next();
 }
 
@@ -270,7 +266,7 @@ export async function spamProtection(c: Context<AppEnv>, next: Next) {
  * Get auth result from context
  */
 export function getAuth(c: Context<AppEnv>): AuthResult {
-  return (c.get('auth' as never) as AuthResult) || {
+  return c.get('auth') || {
     authenticated: false,
     userId: null,
     sessionId: 'unknown',

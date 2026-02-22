@@ -81,12 +81,6 @@ export class OCREngine {
     imageBase64: string,
     region: DetectedRegion
   ): Promise<ExtractedText> {
-    // TODO: Implement actual OCR using MLKit/Vision
-    // 1. Crop image to region
-    // 2. Run OCR
-    // 3. Process results
-
-    // Mock implementation for development
     const rawLines = await this.runOCR(imageBase64, region.bbox);
     const cleanedText = this.cleanOCRText(rawLines);
 
@@ -105,7 +99,8 @@ export class OCREngine {
   }
 
   /**
-   * Run OCR on a region of the image using platform text recognition
+   * Run OCR on a region of the image using platform text recognition.
+   * Requires @react-native-ml-kit/text-recognition to be installed.
    */
   private async runOCR(
     imageBase64: string,
@@ -131,60 +126,24 @@ export class OCREngine {
         { base64: true, format: ImageManipulator.SaveFormat.JPEG }
       );
 
-      // Use react-native-mlkit-ocr for text recognition
-      // This requires the package to be installed: npm install @react-native-ml-kit/text-recognition
-      try {
-        const TextRecognition = await import('@react-native-ml-kit/text-recognition');
-        const result = await TextRecognition.default.recognize(croppedResult.uri);
+      // Use ML Kit for text recognition
+      const TextRecognition = await import('@react-native-ml-kit/text-recognition');
+      const result = await TextRecognition.default.recognize(croppedResult.uri);
 
-        // Extract text lines from all blocks
-        const lines: string[] = [];
-        for (const block of result.blocks) {
-          for (const line of block.lines) {
-            if (line.text && line.text.trim().length > 0) {
-              lines.push(line.text);
-            }
+      // Extract text lines from all blocks
+      const lines: string[] = [];
+      for (const block of result.blocks) {
+        for (const line of block.lines) {
+          if (line.text && line.text.trim().length > 0) {
+            lines.push(line.text);
           }
         }
-
-        return lines;
-      } catch (mlkitError) {
-        // Fallback: Try using expo's built-in OCR capabilities if available
-        console.warn('[OCREngine] ML Kit not available, trying fallback:', mlkitError);
-        return this.runFallbackOCR(croppedResult.base64 || '');
       }
+
+      return lines;
     } catch (error) {
       console.error('[OCREngine] OCR processing error:', error);
-      return [];
-    }
-  }
-
-  /**
-   * Fallback OCR using tesseract.js for web/development
-   * or returning mock data for testing
-   */
-  private async runFallbackOCR(imageBase64: string): Promise<string[]> {
-    // In development/testing, check if we have known test patterns
-    // This allows the app to function with mock data during development
-    if (__DEV__) {
-      console.log('[OCREngine] Running in development mode with mock OCR');
-      // Return empty - the ComponentMatcher will use its known patterns
-      return [];
-    }
-
-    // For production without ML Kit, try tesseract.js (web) or return empty
-    try {
-      // Dynamic import for web environments
-      const Tesseract = await import('tesseract.js');
-      const result = await Tesseract.recognize(
-        `data:image/jpeg;base64,${imageBase64}`,
-        'eng',
-        { logger: () => {} } // Suppress logging
-      );
-
-      return result.data.lines.map((line: { text: string }) => line.text);
-    } catch {
-      // Tesseract not available
+      // Return empty — the pipeline should handle "no text found" state
       return [];
     }
   }
