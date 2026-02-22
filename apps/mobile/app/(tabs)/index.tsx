@@ -1,15 +1,34 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppStore } from '../../src/store';
+import { OfflineBanner } from '../../src/ui/components/OfflineBanner';
+import { getPipeline } from '../../src/pipeline/Pipeline';
+import type { PipelineStage } from '../../src/pipeline/Pipeline';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function ScanScreen() {
   const [isScanning, setIsScanning] = useState(false);
+  const [pipelineError, setPipelineError] = useState<string | null>(null);
+  const [pipelineStage, setPipelineStage] = useState<PipelineStage>('idle');
   const { currentClaim, setCurrentClaim } = useAppStore();
+
+  useEffect(() => {
+    const pipeline = getPipeline();
+    const unsubscribe = pipeline.subscribe((state) => {
+      setPipelineStage(state.stage);
+      if (state.stage === 'error' && state.error) {
+        setPipelineError(state.error);
+        setIsScanning(false);
+      } else {
+        setPipelineError(null);
+      }
+    });
+    return unsubscribe;
+  }, []);
 
   const handleStartScan = useCallback(() => {
     setIsScanning(true);
@@ -34,6 +53,19 @@ export default function ScanScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <OfflineBanner />
+
+      {/* Pipeline Error Banner */}
+      {pipelineError && (
+        <View style={styles.errorBanner}>
+          <Ionicons name="warning-outline" size={16} color="#FF4444" />
+          <Text style={styles.errorText}>{pipelineError}</Text>
+          <TouchableOpacity onPress={() => setPipelineError(null)}>
+            <Ionicons name="close-circle" size={18} color="#666" />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Camera Preview Placeholder */}
       <View style={styles.cameraContainer}>
         <View style={styles.cameraPlaceholder}>
@@ -222,5 +254,20 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: '#00D4FF',
     fontSize: 12,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a0000',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#330000',
+  },
+  errorText: {
+    color: '#FF4444',
+    fontSize: 13,
+    flex: 1,
   },
 });

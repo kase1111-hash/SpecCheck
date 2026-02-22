@@ -76,33 +76,17 @@ If any link can't support the claim, the claim is false. You don't need a test l
 
 This tool answers one question: can this hardware physically do what the seller claims?
 
-## The AR Overlay
+## Feature Status
 
-Point your camera at a PCB and components get highlighted in real-time:
-
-- **Green** - Component identified, specs retrieved
-- **Yellow** - Partial match, manual verification suggested  
-- **Blue** - Tap for more details
-- **Red** - This component can't support the claimed output
-
-Tap any component to see:
-- Manufacturer and part number
-- Key specs from datasheet (max current, voltage, output, thermal limits)
-- What this means for the overall claim
-
-Pinch to zoom. The overlay stays anchored to the physical components.
-
-## Community Layer
-
-When you verify a product, you can submit:
-- Photos of the internals
-- Seller listing link
-- Claimed vs actual specs
-- Verdict
-
-This builds a database of known fakes. Before you buy, search the listing URL or product name and see if someone's already opened one up.
-
-No accounts required to search. Optional account to contribute.
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Component detection (TFLite) | In progress | Model loads on-device; mock fallback in dev builds only |
+| OCR (ML Kit) | In progress | Single ML Kit path, no fallback |
+| Datasheet lookup (API) | Working | Cached via Cloudflare KV |
+| LLM constraint analysis | Working | Claude API with retry + timeout |
+| AR overlay | Not started | Planned; UI stubs exist but no rendering logic |
+| Community submissions | Backend ready | API routes wired; mobile UI not integrated |
+| Community search | Backend ready | API routes wired; mobile UI not integrated |
 
 ## Privacy
 
