@@ -36,6 +36,23 @@
               └─────────────────────────┘
 ```
 
+## Feature Status
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Camera capture | Implemented | expo-camera with permissions |
+| Component detection (TFLite) | In progress | Model loads on-device; mock fallback in dev only |
+| OCR (ML Kit) | In progress | Single ML Kit path, no fallback |
+| Component matching | Implemented | Fuzzy + exact matching |
+| Datasheet lookup (API) | Working | KV-cached, Supabase-backed |
+| Claim parser | Implemented | Handles "10k lumens", "2Ah", comma formatting |
+| Constraint chain builder | Implemented | LED droop, battery discharge, thermal |
+| Verdict generator | Implemented | Plausible / impossible / uncertain |
+| LLM constraint analysis | Working | Claude API with retry + 30s timeout |
+| AR overlay | Not started | Types exist, no rendering logic |
+| Community submissions | Backend ready | API routes wired; mobile UI not integrated |
+| Community search | Backend ready | API routes wired; mobile UI not integrated |
+
 ## Mobile App Architecture
 
 ### Platform
@@ -63,12 +80,6 @@ Rationale:
 │   ├── ComponentMatcher.ts     # Match detected text to known parts
 │   └── models/                 # TFLite/CoreML model files
 │
-├── /ar
-│   ├── AROverlay.tsx           # Augmented reality layer
-│   ├── ComponentMarker.tsx     # Individual component highlight
-│   ├── SpecCard.tsx            # Floating spec display
-│   └── AnchorManager.ts        # Keep overlays pinned to physical locations
-│
 ├── /datasheet
 │   ├── DatasheetCache.ts       # Local SQLite cache
 │   ├── DatasheetAPI.ts         # Remote lookup
@@ -80,19 +91,15 @@ Rationale:
 │   ├── CategoryRules.ts        # Category-specific validation rules
 │   └── VerdictGenerator.ts     # Produce human-readable verdict
 │
-├── /community
-│   ├── SubmissionForm.tsx      # Submit a verified product
-│   ├── SearchView.tsx          # Search existing verifications
-│   └── CommunityAPI.ts         # Backend communication
+├── /pipeline
+│   └── Pipeline.ts             # 8-stage orchestrator
 │
-├── /storage
-│   ├── LocalDB.ts              # SQLite wrapper
-│   ├── ScanHistory.ts          # Recent scans
-│   └── SavedProducts.ts        # User's saved verifications
+├── /store
+│   └── index.ts                # Zustand state (persisted via AsyncStorage)
 │
 └── /ui
     ├── /screens                # Main app screens
-    ├── /components             # Shared UI components
+    ├── /components             # ErrorBoundary, OfflineBanner, etc.
     └── /theme                  # Colors, typography
 ```
 
@@ -234,43 +241,15 @@ Key specs by category:
 - thd (%)
 - supply_voltage_range (V)
 
-## AR Overlay System
+## AR Overlay System (Planned)
 
-### Anchor Management
+> **Status:** Not yet implemented. Types defined in `@speccheck/shared-types`. The planned approach uses lightweight 2D overlays (not full ARKit/ARCore) to keep complexity and battery impact low.
 
-Components are anchored to physical locations in the camera view.
-
-```typescript
-ComponentAnchor {
-  component_id: string
-  screen_position: Point      // Current screen coordinates
-  world_position: Point3D     // Estimated physical position
-  tracking_status: "tracking" | "lost" | "static"
-}
-```
-
-For devices without full AR capability (ARCore/ARKit), fall back to:
-- Feature point tracking on PCB
-- Homography estimation from initial frame
-- Manual re-anchor on significant movement
-
-### Overlay Rendering
-
-```typescript
-OverlayState {
-  anchors: ComponentAnchor[]
-  selected_component: string | null
-  expanded_cards: string[]    // Components with full spec cards shown
-  constraint_chain: ConstraintChain | null
-  verdict: Verdict | null
-}
-```
-
-Visual hierarchy:
-1. **Highlight boxes** - Always visible, color-coded by status
+Planned visual hierarchy:
+1. **Highlight boxes** - Color-coded by match status
 2. **Labels** - Part number, tap to expand
-3. **Spec cards** - Expanded view with full specs
-4. **Constraint chain** - Shown when claim is being evaluated
+3. **Spec cards** - Expanded view with key specs
+4. **Constraint chain** - Shown during claim evaluation
 5. **Verdict banner** - Final result
 
 ## Claim Validation Engine
@@ -570,35 +549,30 @@ LLMRequest {
 
 ## Development Phases
 
-### Phase 1: Core Camera + Recognition
-- Camera integration
-- On-device component detection
-- OCR pipeline
-- Basic AR overlay (bounding boxes + labels)
-- Local datasheet cache with bundled common parts
+### Phase 1: Core Camera + Recognition (in progress)
+- Camera integration (done)
+- On-device component detection (model loading works; awaiting trained model)
+- OCR pipeline (ML Kit path working; no fallback)
+- Local datasheet cache with bundled common parts (done)
 
-### Phase 2: Claim Validation
+### Phase 2: Claim Validation (done)
 - Constraint chain engine
 - Category validators (flashlight, power bank, charger)
 - LLM integration for reasoning
 - Verdict display
 
-### Phase 3: Full AR Experience
-- Smooth anchor tracking
-- Spec cards with full detail
+### Phase 3: AR Experience (not started)
+- 2D overlay rendering
+- Spec cards with detail
 - Visual constraint chain
-- Pinch-to-zoom with overlay persistence
 
-### Phase 4: Community Features
-- Submission flow
-- Search existing verifications
-- Reputation system
-- Moderation tools
+### Phase 4: Community Features (backend done, mobile not started)
+- Backend API routes for submit, search, recent
+- Mobile submission UI and search UI still needed
 
-### Phase 5: Expansion
+### Phase 5: Expansion (not started)
 - Additional categories (audio, motors, storage)
-- Barcode/QR scanning for product lookup
-- Integration with shopping apps
+- Barcode/QR scanning
 - Export/share verifications
 
 ## Performance Targets
