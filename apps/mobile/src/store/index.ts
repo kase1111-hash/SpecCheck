@@ -3,27 +3,18 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type {
   ComponentSpecs,
+  ComponentWithSpecs,
   Claim,
+  ConstraintChain,
   Verdict,
-  ComponentCategory,
 } from '@speccheck/shared-types';
-
-// Parsed claim with metadata
-export interface ParsedClaim {
-  raw: string;
-  parsed: {
-    value: number;
-    unit: string;
-    claimType: string;
-  };
-}
 
 // Scan history entry
 export interface ScanHistoryEntry {
   id: string;
   timestamp: number;
-  claim: ParsedClaim;
-  components: ComponentSpecs[];
+  claim: Claim;
+  components: ComponentWithSpecs[];
   verdict: Verdict;
   imageUri?: string;
 }
@@ -52,8 +43,9 @@ export interface AppSettings {
 interface AppState {
   // Current scan state
   isScanning: boolean;
-  currentClaim: ParsedClaim | null;
-  detectedComponents: ComponentSpecs[];
+  currentClaim: Claim | null;
+  detectedComponents: ComponentWithSpecs[];
+  currentChain: ConstraintChain | null;
   currentVerdict: Verdict | null;
 
   // Persisted data
@@ -63,8 +55,9 @@ interface AppState {
 
   // Scan actions
   setIsScanning: (scanning: boolean) => void;
-  setCurrentClaim: (claim: ParsedClaim | null) => void;
-  setDetectedComponents: (components: ComponentSpecs[]) => void;
+  setCurrentClaim: (claim: Claim | null) => void;
+  setDetectedComponents: (components: ComponentWithSpecs[]) => void;
+  setCurrentChain: (chain: ConstraintChain | null) => void;
   setCurrentVerdict: (verdict: Verdict | null) => void;
   clearCurrentScan: () => void;
 
@@ -101,6 +94,7 @@ export const useAppStore = create<AppState>()(
       isScanning: false,
       currentClaim: null,
       detectedComponents: [],
+      currentChain: null,
       currentVerdict: null,
       scanHistory: [],
       savedComponents: [],
@@ -113,6 +107,8 @@ export const useAppStore = create<AppState>()(
 
       setDetectedComponents: (components) => set({ detectedComponents: components }),
 
+      setCurrentChain: (chain) => set({ currentChain: chain }),
+
       setCurrentVerdict: (verdict) => set({ currentVerdict: verdict }),
 
       clearCurrentScan: () =>
@@ -120,6 +116,7 @@ export const useAppStore = create<AppState>()(
           isScanning: false,
           currentClaim: null,
           detectedComponents: [],
+          currentChain: null,
           currentVerdict: null,
         }),
 

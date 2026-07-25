@@ -1,60 +1,29 @@
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAppStore } from '../../src/store';
+import type { VerdictResult } from '@speccheck/shared-types';
+import { useAppStore, type ScanHistoryEntry } from '../../src/store';
+import { formatClaimValue } from '../../src/analysis';
 
-interface ScanHistoryItem {
-  id: string;
-  timestamp: number;
-  claimRaw: string;
-  verdictType: 'plausible' | 'implausible' | 'uncertain';
-  componentCount: number;
-}
-
-// Mock data for UI development
-const MOCK_HISTORY: ScanHistoryItem[] = [
-  {
-    id: '1',
-    timestamp: Date.now() - 3600000,
-    claimRaw: '10,000 lumens',
-    verdictType: 'implausible',
-    componentCount: 3,
-  },
-  {
-    id: '2',
-    timestamp: Date.now() - 86400000,
-    claimRaw: '20,000mAh capacity',
-    verdictType: 'plausible',
-    componentCount: 5,
-  },
-  {
-    id: '3',
-    timestamp: Date.now() - 172800000,
-    claimRaw: '100W fast charging',
-    verdictType: 'uncertain',
-    componentCount: 2,
-  },
-];
-
-function getVerdictColor(verdict: string): string {
+function getVerdictColor(verdict: VerdictResult): string {
   switch (verdict) {
     case 'plausible':
-      return '#00FF88';
-    case 'implausible':
-      return '#FF4444';
+      return '#22C55E';
+    case 'impossible':
+      return '#EF4444';
     case 'uncertain':
-      return '#FFAA00';
+      return '#EAB308';
     default:
       return '#666';
   }
 }
 
-function getVerdictIcon(verdict: string): keyof typeof Ionicons.glyphMap {
+function getVerdictIcon(verdict: VerdictResult): keyof typeof Ionicons.glyphMap {
   switch (verdict) {
     case 'plausible':
       return 'checkmark-circle';
-    case 'implausible':
+    case 'impossible':
       return 'close-circle';
     case 'uncertain':
       return 'help-circle';
@@ -73,27 +42,30 @@ function formatTimeAgo(timestamp: number): string {
   return 'Just now';
 }
 
-function HistoryItem({ item }: { item: ScanHistoryItem }) {
+function HistoryItem({
+  entry,
+  onOpen,
+}: {
+  entry: ScanHistoryEntry;
+  onOpen: (entry: ScanHistoryEntry) => void;
+}) {
   return (
-    <TouchableOpacity
-      style={styles.historyItem}
-      onPress={() => router.push(`/scan-result?id=${item.id}`)}
-    >
+    <TouchableOpacity style={styles.historyItem} onPress={() => onOpen(entry)}>
       <View style={styles.verdictIndicator}>
         <Ionicons
-          name={getVerdictIcon(item.verdictType)}
+          name={getVerdictIcon(entry.verdict.result)}
           size={28}
-          color={getVerdictColor(item.verdictType)}
+          color={getVerdictColor(entry.verdict.result)}
         />
       </View>
       <View style={styles.itemContent}>
-        <Text style={styles.claimText}>{item.claimRaw}</Text>
+        <Text style={styles.claimText}>
+          {formatClaimValue(entry.claim.value, entry.claim.unit)}
+        </Text>
         <View style={styles.itemMeta}>
-          <Text style={styles.metaText}>
-            {item.componentCount} components
-          </Text>
+          <Text style={styles.metaText}>{entry.components.length} components</Text>
           <Text style={styles.metaDot}>•</Text>
-          <Text style={styles.metaText}>{formatTimeAgo(item.timestamp)}</Text>
+          <Text style={styles.metaText}>{formatTimeAgo(entry.timestamp)}</Text>
         </View>
       </View>
       <Ionicons name="chevron-forward" size={20} color="#444" />
@@ -102,35 +74,56 @@ function HistoryItem({ item }: { item: ScanHistoryItem }) {
 }
 
 export default function HistoryScreen() {
-  const { scanHistory } = useAppStore();
+  const {
+    scanHistory,
+    clearHistory,
+    setCurrentClaim,
+    setDetectedComponents,
+    setCurrentChain,
+    setCurrentVerdict,
+  } = useAppStore();
 
-  // Use mock data for now, will switch to real data
-  const displayHistory = MOCK_HISTORY;
+  /**
+   * Re-open a past scan by making it the current one. The chain is not
+   * persisted, so the result screen falls back to the verdict's own breakdown.
+   */
+  const handleOpen = (entry: ScanHistoryEntry) => {
+    setCurrentClaim(entry.claim);
+    setDetectedComponents(entry.components);
+    setCurrentChain(null);
+    setCurrentVerdict(entry.verdict);
+    router.push('/scan-result');
+  };
+
+  const handleClearAll = () => {
+    Alert.alert('Clear scan history?', 'This removes every saved scan on this device.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Clear All', style: 'destructive', onPress: clearHistory },
+    ]);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Scan History</Text>
-        {displayHistory.length > 0 && (
-          <TouchableOpacity style={styles.clearButton}>
+        {scanHistory.length > 0 && (
+          <TouchableOpacity style={styles.clearButton} onPress={handleClearAll}>
             <Text style={styles.clearButtonText}>Clear All</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {displayHistory.length === 0 ? (
+      {scanHistory.length === 0 ? (
         <View style={styles.emptyState}>
           <Ionicons name="time-outline" size={64} color="#333" />
           <Text style={styles.emptyTitle}>No scans yet</Text>
-          <Text style={styles.emptySubtext}>
-            Your scan history will appear here
-          </Text>
+          <Text style={styles.emptySubtext}>Your scan history will appear here</Text>
         </View>
       ) : (
         <FlatList
-          data={displayHistory}
+          data={scanHistory}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <HistoryItem item={item} />}
+          renderItem={({ item }) => <HistoryItem entry={item} onOpen={handleOpen} />}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
         />

@@ -1,20 +1,13 @@
 /**
  * UI Module
  *
- * Handles user interface components and screens.
+ * Shared presentation code. Screens themselves live in `app/`, where
+ * expo-router picks them up as routes.
  *
  * Structure:
- * - /screens: Main app screens (navigation targets)
  * - /components: Shared UI components
  * - /theme: Colors, typography, spacing
- *
- * Exports:
- * - Screen components
- * - Shared UI components
- * - Theme configuration
  */
 
-export * from './screens';
-// TODO: Implement UI components
-// export * from './components';
-// export * from './theme';
+export * from './components';
+export * from './theme';
