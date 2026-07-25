@@ -12,8 +12,6 @@ interface ComponentCacheRow {
   category: string;
   specs_json: string;
   source_type: string;
-  source_url: string | null;
-  source_confidence: number;
   datasheet_url: string | null;
   created_at: number;
   updated_at: number;
@@ -116,13 +114,11 @@ export class ComponentCacheRepository {
     await db.run(
       `INSERT INTO ${TABLES.COMPONENT_CACHE}
        (part_number, manufacturer, category, specs_json, source_type,
-        source_url, source_confidence, datasheet_url, created_at, updated_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        datasheet_url, created_at, updated_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(part_number, manufacturer) DO UPDATE SET
          specs_json = excluded.specs_json,
          source_type = excluded.source_type,
-         source_url = excluded.source_url,
-         source_confidence = excluded.source_confidence,
          datasheet_url = excluded.datasheet_url,
          updated_at = excluded.updated_at,
          expires_at = excluded.expires_at`,
@@ -131,9 +127,7 @@ export class ComponentCacheRepository {
         component.manufacturer,
         component.category,
         JSON.stringify(component.specs),
-        component.source.type,
-        component.source.url ?? null,
-        component.source.confidence,
+        component.source,
         component.datasheetUrl ?? null,
         now,
         now,
@@ -215,12 +209,7 @@ export class ComponentCacheRepository {
    * Convert database row to ComponentSpecs type.
    */
   private rowToComponentSpecs(row: ComponentCacheRow): ComponentSpecs {
-    const source: DataSource = {
-      type: row.source_type as DataSource['type'],
-      url: row.source_url ?? undefined,
-      retrievedAt: row.updated_at,
-      confidence: row.source_confidence,
-    };
+    const source = row.source_type as DataSource;
 
     return {
       partNumber: row.part_number,

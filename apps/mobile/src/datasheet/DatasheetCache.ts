@@ -15,13 +15,11 @@ import type {
 /** Cache TTL in milliseconds (30 days) */
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-/** Database interface type */
-interface SQLiteDatabase {
-  execAsync(sql: string): Promise<void>;
-  getFirstAsync<T>(sql: string, params?: unknown[]): Promise<T | null>;
-  runAsync(sql: string, params?: unknown[]): Promise<{ changes: number }>;
-  getAllAsync<T>(sql: string, params?: unknown[]): Promise<T[]>;
-}
+/**
+ * Database handle type, taken from expo-sqlite rather than hand-declared so it
+ * cannot drift from the API actually being called.
+ */
+type SQLiteDatabase = import('expo-sqlite').SQLiteDatabase;
 
 /** Database row type */
 interface DatasheetRow {

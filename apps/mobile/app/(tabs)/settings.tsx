@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 're
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppStore } from '../../src/store';
-import { VERSION, BUILD_NUMBER, CURRENT_PHASE } from '../../src/config/version';
+import { getFullVersion, getPhaseInfo } from '../../src/config/version';
 
 interface SettingRowProps {
   icon: keyof typeof Ionicons.glyphMap;
@@ -133,12 +133,12 @@ export default function SettingsScreen() {
           <SettingRow
             icon="information-circle-outline"
             title="Version"
-            value={`${VERSION} (${BUILD_NUMBER})`}
+            value={getFullVersion()}
           />
           <SettingRow
             icon="flag-outline"
             title="Release Phase"
-            value={CURRENT_PHASE}
+            value={`${getPhaseInfo().phase}. ${getPhaseInfo().name}`}
           />
           <SettingRow
             icon="document-text-outline"

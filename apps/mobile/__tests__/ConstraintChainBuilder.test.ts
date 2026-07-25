@@ -379,7 +379,27 @@ describe('ConstraintChainBuilder', () => {
       );
 
       expect(efficiencyLink).toBeDefined();
+      // The pack delivers the sum of both cells, not the capacity of one cell
+      expect(chain.maxPossible).toBe(
+        Math.round(7000 * EFFICIENCY_CONFIG.powerBank.overall)
+      );
+      expect(chain.bottleneck?.constraintType).toBe('efficiency');
       expect(chain.verdict).toBe('impossible'); // 10000 > 5950
+    });
+
+    it('does not treat a single cell as a cap on the whole pack', () => {
+      const claim = createMockClaim({
+        value: 5000,
+        category: 'mah',
+        unit: 'mAh',
+      });
+      const battery1 = createBatteryComponent(3500, 3.6, 8);
+      const battery2 = createBatteryComponent(3500, 3.6, 8);
+
+      const chain = buildConstraintChain(claim, [battery1, battery2]);
+
+      // 5000mAh is above one cell (3500) but within the pack's 5950mAh
+      expect(chain.verdict).toBe('plausible');
     });
 
     it('applies configurable efficiency value', () => {
