@@ -127,7 +127,14 @@ class DatabaseManager {
    */
   async transaction<T>(callback: () => Promise<T>): Promise<T> {
     const db = await this.getDatabase();
-    return db.withTransactionAsync(callback);
+
+    // withTransactionAsync resolves to void, so the callback's value has to be
+    // captured on the way out or every transactional write returns undefined.
+    let result!: T;
+    await db.withTransactionAsync(async () => {
+      result = await callback();
+    });
+    return result;
   }
 
   /**

@@ -1,6 +1,11 @@
 import { db } from '../Database';
 import { TABLES, CACHE_TTL } from '../schema';
-import type { Verdict, ComponentCategory } from '@speccheck/shared-types';
+import type {
+  Verdict,
+  VerdictResult,
+  VerdictConfidence,
+  ComponentCategory,
+} from '@speccheck/shared-types';
 
 /**
  * Claim information stored with a scan
@@ -40,8 +45,8 @@ export interface ScanHistoryEntry {
 export interface ScanHistorySummary {
   id: number;
   claimRaw: string;
-  verdictType: Verdict['verdictType'];
-  confidence: number;
+  verdictType: VerdictResult;
+  confidence: VerdictConfidence;
   componentCount: number;
   createdAt: number;
 }
@@ -56,7 +61,7 @@ interface ScanHistoryRow {
   claim_unit: string | null;
   claim_type: string | null;
   verdict_type: string;
-  verdict_confidence: number;
+  verdict_confidence: string;
   verdict_summary: string | null;
   verdict_explanation: string | null;
   verdict_json: string;
@@ -114,8 +119,8 @@ export class ScanHistoryRepository {
     return rows.map((row) => ({
       id: row.id,
       claimRaw: row.claim_raw,
-      verdictType: row.verdict_type as Verdict['verdictType'],
-      confidence: row.verdict_confidence,
+      verdictType: row.verdict_type as VerdictResult,
+      confidence: row.verdict_confidence as VerdictConfidence,
       componentCount: row.component_count,
       createdAt: row.created_at,
     }));
@@ -125,7 +130,7 @@ export class ScanHistoryRepository {
    * Get scans by verdict type.
    */
   async getByVerdictType(
-    verdictType: Verdict['verdictType'],
+    verdictType: VerdictResult,
     limit = 50
   ): Promise<ScanHistorySummary[]> {
     const rows = await db.query<ScanHistoryRow>(
@@ -139,8 +144,8 @@ export class ScanHistoryRepository {
     return rows.map((row) => ({
       id: row.id,
       claimRaw: row.claim_raw,
-      verdictType: row.verdict_type as Verdict['verdictType'],
-      confidence: row.verdict_confidence,
+      verdictType: row.verdict_type as VerdictResult,
+      confidence: row.verdict_confidence as VerdictConfidence,
       componentCount: row.component_count,
       createdAt: row.created_at,
     }));
@@ -163,8 +168,8 @@ export class ScanHistoryRepository {
     return rows.map((row) => ({
       id: row.id,
       claimRaw: row.claim_raw,
-      verdictType: row.verdict_type as Verdict['verdictType'],
-      confidence: row.verdict_confidence,
+      verdictType: row.verdict_type as VerdictResult,
+      confidence: row.verdict_confidence as VerdictConfidence,
       componentCount: row.component_count,
       createdAt: row.created_at,
     }));
@@ -193,10 +198,10 @@ export class ScanHistoryRepository {
           claim.value,
           claim.unit,
           claim.type,
-          verdict.verdictType,
+          verdict.result,
           verdict.confidence,
-          verdict.summary,
           verdict.explanation,
+          verdict.details.join('\n'),
           JSON.stringify(verdict),
           components.length,
           now,

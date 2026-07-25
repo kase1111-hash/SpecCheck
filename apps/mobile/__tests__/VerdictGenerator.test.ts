@@ -30,15 +30,28 @@ const createMockClaim = (overrides?: Partial<Claim>): Claim => ({
 // Helper to create a mock chain link
 const createMockChainLink = (overrides?: Partial<ChainLink>): ChainLink => ({
   component: {
-    category: 'led',
-    boundingBox: { x: 0, y: 0, width: 100, height: 100 },
-    confidence: 0.95,
+    match: {
+      regionId: 'region_1',
+      status: 'confident',
+      partNumber: 'XHP70.2',
+      manufacturer: 'Cree',
+      category: 'led',
+      confidence: 0.95,
+      datasheetId: 'xhp70_2',
+      alternatives: [],
+    },
     specs: {
       partNumber: 'XHP70.2',
       manufacturer: 'Cree',
+      category: 'led',
+      source: 'cache',
+      specs: {},
+      datasheetUrl: null,
+      lastUpdated: 0,
     },
+    error: null,
   },
-  constraintType: 'max_luminous_flux',
+  constraintType: 'max_output',
   maxValue: 4022,
   unit: 'lm',
   isBottleneck: false,

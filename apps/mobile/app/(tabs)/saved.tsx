@@ -2,43 +2,8 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAppStore } from '../../src/store';
 import type { ComponentCategory } from '@speccheck/shared-types';
-
-interface SavedComponent {
-  id: string;
-  partNumber: string;
-  manufacturer: string;
-  category: ComponentCategory;
-  savedAt: number;
-  notes?: string;
-}
-
-// Mock data for UI development
-const MOCK_SAVED: SavedComponent[] = [
-  {
-    id: '1',
-    partNumber: 'XHP70.2',
-    manufacturer: 'Cree',
-    category: 'led',
-    savedAt: Date.now() - 86400000,
-    notes: 'Common in high-output flashlights',
-  },
-  {
-    id: '2',
-    partNumber: 'NCR18650GA',
-    manufacturer: 'Panasonic/Sanyo',
-    category: 'battery_cell',
-    savedAt: Date.now() - 172800000,
-  },
-  {
-    id: '3',
-    partNumber: 'MP2315',
-    manufacturer: 'Monolithic Power',
-    category: 'dc_dc',
-    savedAt: Date.now() - 259200000,
-  },
-];
+import { useAppStore, type SavedComponent } from '../../src/store';
 
 function getCategoryIcon(category: ComponentCategory): keyof typeof Ionicons.glyphMap {
   switch (category) {
@@ -86,25 +51,31 @@ function formatCategory(category: ComponentCategory): string {
   return categoryNames[category] || category;
 }
 
-function SavedItem({ item }: { item: SavedComponent }) {
+function SavedItem({
+  item,
+  onRemove,
+}: {
+  item: SavedComponent;
+  onRemove: (id: string) => void;
+}) {
+  const { component } = item;
+
   return (
     <TouchableOpacity
       style={styles.savedItem}
-      onPress={() => router.push(`/component-detail?id=${item.id}`)}
+      onPress={() =>
+        router.push(`/component-detail?partNumber=${encodeURIComponent(component.partNumber)}`)
+      }
     >
       <View style={styles.iconContainer}>
-        <Ionicons
-          name={getCategoryIcon(item.category)}
-          size={24}
-          color="#00D4FF"
-        />
+        <Ionicons name={getCategoryIcon(component.category)} size={24} color="#00D4FF" />
       </View>
       <View style={styles.itemContent}>
-        <Text style={styles.partNumber}>{item.partNumber}</Text>
-        <Text style={styles.manufacturer}>{item.manufacturer}</Text>
+        <Text style={styles.partNumber}>{component.partNumber}</Text>
+        <Text style={styles.manufacturer}>{component.manufacturer}</Text>
         <View style={styles.itemMeta}>
           <View style={styles.categoryBadge}>
-            <Text style={styles.categoryText}>{formatCategory(item.category)}</Text>
+            <Text style={styles.categoryText}>{formatCategory(component.category)}</Text>
           </View>
           {item.notes && (
             <Text style={styles.notesPreview} numberOfLines={1}>
@@ -113,7 +84,11 @@ function SavedItem({ item }: { item: SavedComponent }) {
           )}
         </View>
       </View>
-      <TouchableOpacity style={styles.bookmarkButton}>
+      <TouchableOpacity
+        style={styles.bookmarkButton}
+        onPress={() => onRemove(item.id)}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
         <Ionicons name="bookmark" size={20} color="#00D4FF" />
       </TouchableOpacity>
     </TouchableOpacity>
@@ -121,21 +96,15 @@ function SavedItem({ item }: { item: SavedComponent }) {
 }
 
 export default function SavedScreen() {
-  const { savedComponents } = useAppStore();
-
-  // Use mock data for now
-  const displaySaved = MOCK_SAVED;
+  const { savedComponents, unsaveComponent } = useAppStore();
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Saved Components</Text>
-        <TouchableOpacity style={styles.searchButton}>
-          <Ionicons name="search" size={24} color="#666" />
-        </TouchableOpacity>
       </View>
 
-      {displaySaved.length === 0 ? (
+      {savedComponents.length === 0 ? (
         <View style={styles.emptyState}>
           <Ionicons name="bookmark-outline" size={64} color="#333" />
           <Text style={styles.emptyTitle}>No saved components</Text>
@@ -145,9 +114,9 @@ export default function SavedScreen() {
         </View>
       ) : (
         <FlatList
-          data={displaySaved}
+          data={savedComponents}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <SavedItem item={item} />}
+          renderItem={({ item }) => <SavedItem item={item} onRemove={unsaveComponent} />}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
         />

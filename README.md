@@ -80,11 +80,15 @@ This tool answers one question: can this hardware physically do what the seller 
 
 | Feature | Status | Notes |
 |---------|--------|-------|
+| Scan flow (camera → verdict) | Working | Capture runs the full pipeline; results render from real data |
 | Component detection (TFLite) | In progress | Model loads on-device; mock fallback in dev builds only |
 | OCR (ML Kit) | In progress | Single ML Kit path, no fallback |
 | Datasheet lookup (API) | Working | Cached via Cloudflare KV |
-| LLM constraint analysis | Working | Claude API with retry + timeout |
-| AR overlay | Not started | Planned; UI stubs exist but no rendering logic |
+| Constraint chain analysis | Working | Runs on-device; no network call needed |
+| Claim input and verdict screen | Working | Claim parser + constraint chain shown with its bottleneck |
+| Scan history / saved components | Working | Persisted locally via zustand + AsyncStorage |
+| LLM constraint analysis | Backend only | `/api/analyze/claim` works; the app does not call it yet |
+| AR overlay | Not started | Camera preview has a framing guide, but no per-component overlay |
 | Community submissions | Backend ready | API routes wired; mobile UI not integrated |
 | Community search | Backend ready | API routes wired; mobile UI not integrated |
 

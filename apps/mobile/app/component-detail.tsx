@@ -1,66 +1,31 @@
+import { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppStore } from '../src/store';
-import type { ComponentSpecs, SpecValue, ComponentCategory } from '@speccheck/shared-types';
+import type {
+  ComponentSpecs,
+  DataSource,
+  SpecValue,
+  ComponentCategory,
+} from '@speccheck/shared-types';
 
-// Mock component for UI development
-const MOCK_COMPONENT: ComponentSpecs = {
-  partNumber: 'XHP70.2',
-  manufacturer: 'Cree',
-  category: 'led',
-  source: {
-    type: 'datasheet',
-    url: 'https://cree-led.com/media/documents/XHP70.2.pdf',
-    retrievedAt: Date.now() - 86400000,
-    confidence: 0.98,
-  },
-  specs: {
-    luminous_flux: {
-      value: 4292,
-      unit: 'lm',
-      conditions: '@ 2400mA, Tj=85°C',
-      min: 3800,
-      max: 4800,
-      typical: 4292,
-    },
-    forward_voltage: {
-      value: 12,
-      unit: 'V',
-      conditions: '@ 1050mA',
-      min: 11.2,
-      max: 12.8,
-      typical: 12,
-    },
-    max_current: {
-      value: 2400,
-      unit: 'mA',
-      conditions: 'Absolute maximum',
-      min: null,
-      max: 2400,
-      typical: null,
-    },
-    thermal_resistance: {
-      value: 1.3,
-      unit: '°C/W',
-      conditions: 'Junction to solder point',
-      min: null,
-      max: null,
-      typical: 1.3,
-    },
-    cri: {
-      value: 80,
-      unit: '',
-      conditions: 'Typical',
-      min: 70,
-      max: null,
-      typical: 80,
-    },
-  },
-  datasheetUrl: 'https://cree-led.com/media/documents/XHP70.2.pdf',
-  lastUpdated: Date.now() - 86400000,
-};
+/** Where a component's data came from, in words the user can act on */
+function formatSource(source: DataSource): string {
+  switch (source) {
+    case 'cache':
+      return 'Cached datasheet';
+    case 'api':
+      return 'Datasheet API';
+    case 'llm':
+      return 'Inferred from part number';
+    case 'manual':
+      return 'Entered manually';
+    default:
+      return source;
+  }
+}
 
 function getCategoryIcon(category: ComponentCategory): keyof typeof Ionicons.glyphMap {
   switch (category) {
@@ -134,16 +99,54 @@ function SpecRow({ name, spec }: { name: string; spec: SpecValue }) {
 }
 
 export default function ComponentDetailScreen() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
-  const { isComponentSaved, saveComponent, unsaveComponent } = useAppStore();
+  const { partNumber } = useLocalSearchParams<{ partNumber?: string }>();
+  const { detectedComponents, savedComponents, saveComponent, unsaveComponent } =
+    useAppStore();
 
-  // Use mock data for UI development
-  const component = MOCK_COMPONENT;
-  const isSaved = isComponentSaved(component.partNumber);
+  // Prefer the component from the current scan (it carries match confidence),
+  // and fall back to the user's saved list so history links keep working.
+  const detected = useMemo(
+    () => detectedComponents.find((c) => c.specs?.partNumber === partNumber),
+    [detectedComponents, partNumber]
+  );
+
+  const savedEntry = useMemo(
+    () => savedComponents.find((s) => s.component.partNumber === partNumber),
+    [savedComponents, partNumber]
+  );
+
+  const component: ComponentSpecs | null =
+    detected?.specs ?? savedEntry?.component ?? null;
+
+  if (!component) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>Component</Text>
+          </View>
+        </View>
+        <View style={styles.emptyState}>
+          <Ionicons name="help-circle-outline" size={64} color="#333" />
+          <Text style={styles.emptyTitle}>Component not found</Text>
+          <Text style={styles.emptyText}>
+            {partNumber
+              ? `No specs are loaded for ${partNumber}. Scan the board again or save it from a scan result.`
+              : 'No component was selected.'}
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const isSaved = savedEntry !== undefined;
 
   const handleToggleSave = () => {
-    if (isSaved) {
-      unsaveComponent(id || component.partNumber);
+    if (savedEntry) {
+      unsaveComponent(savedEntry.id);
     } else {
       saveComponent(component);
     }
@@ -198,15 +201,17 @@ export default function ComponentDetailScreen() {
             <Text style={styles.sourceLabel}>Data Source</Text>
             <View style={styles.sourceBadge}>
               <Ionicons name="document-text-outline" size={14} color="#00D4FF" />
-              <Text style={styles.sourceBadgeText}>{component.source.type}</Text>
+              <Text style={styles.sourceBadgeText}>{formatSource(component.source)}</Text>
             </View>
           </View>
-          <View style={styles.sourceRow}>
-            <Text style={styles.sourceLabel}>Confidence</Text>
-            <Text style={styles.sourceValue}>
-              {Math.round(component.source.confidence * 100)}%
-            </Text>
-          </View>
+          {detected && (
+            <View style={styles.sourceRow}>
+              <Text style={styles.sourceLabel}>Match Confidence</Text>
+              <Text style={styles.sourceValue}>
+                {Math.round(detected.match.confidence * 100)}%
+              </Text>
+            </View>
+          )}
           <View style={styles.sourceRow}>
             <Text style={styles.sourceLabel}>Last Updated</Text>
             <Text style={styles.sourceValue}>
@@ -288,6 +293,25 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    gap: 12,
+  },
+  emptyTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '600',
+    marginTop: 8,
+  },
+  emptyText: {
+    color: '#888',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 21,
   },
   componentCard: {
     alignItems: 'center',

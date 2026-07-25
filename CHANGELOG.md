@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Energy and capacity constraint chains treated each battery cell as a ceiling
+  on the whole pack, so multi-cell packs were reported at single-cell capacity
+- Local writes bound non-existent verdict and data-source fields to NOT NULL
+  columns, so saving a scan or caching a component failed
+- `Database.transaction` discarded its callback's return value
+
 ### Added
+- Scan screen runs the real pipeline: camera capture → detection → OCR →
+  matching → datasheet lookup → constraint chain → verdict
+- Result screen renders the actual constraint chain with its bottleneck marked
+- Scan history and saved components read from the store instead of fixtures
 - Project documentation (10-step coding guide)
 - Problem definition and data flow design
 - Architecture decisions documentation

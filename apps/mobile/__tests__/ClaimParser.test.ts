@@ -105,8 +105,8 @@ describe('ClaimParser', () => {
     });
 
     it('sets source correctly', () => {
-      const result = parseClaim('1000lm', 'listing_text');
-      expect(result?.source).toBe('listing_text');
+      const result = parseClaim('1000lm', 'listing_ocr');
+      expect(result?.source).toBe('listing_ocr');
     });
   });
 

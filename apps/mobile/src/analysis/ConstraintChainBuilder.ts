@@ -246,19 +246,25 @@ function buildCapacityChain(
   const efficiency = EFFICIENCY_CONFIG.powerBank.overall;
   const deliverableCapacity = Math.round(totalCapacity * efficiency);
 
-  if (totalCapacity > 0) {
-    links.push({
-      component: batteries[0],
-      constraintType: 'efficiency',
-      maxValue: deliverableCapacity,
-      unit: 'mAh',
-      isBottleneck: false,
-      explanation: `Total ${totalCapacity}mAh × ${(efficiency * 100).toFixed(0)}% efficiency (DC-DC + losses) = ${deliverableCapacity}mAh deliverable`,
-      sourceSpec: 'efficiency',
-    });
+  if (totalCapacity === 0) {
+    return finalizeChain(claim, links);
   }
 
-  return finalizeChain(claim, links);
+  // Cell capacity is additive: a pack delivers the sum of its cells, not the
+  // capacity of the weakest one. Only this aggregate link can be the bottleneck
+  // — the per-cell links above are contributions shown for transparency.
+  const packLink: ChainLink = {
+    component: batteries[0],
+    constraintType: 'efficiency',
+    maxValue: deliverableCapacity,
+    unit: 'mAh',
+    isBottleneck: false,
+    explanation: `Total ${totalCapacity}mAh × ${(efficiency * 100).toFixed(0)}% efficiency (DC-DC + losses) = ${deliverableCapacity}mAh deliverable`,
+    sourceSpec: 'efficiency',
+  };
+  links.push(packLink);
+
+  return finalizeChain(claim, links, [packLink]);
 }
 
 /**
@@ -268,12 +274,13 @@ function buildEnergyChain(
   claim: Claim,
   components: ComponentWithSpecs[]
 ): ConstraintChain {
-  const links: ChainLink[] = [];
-
   // Find all battery cells and calculate total Wh
   const batteries = components.filter((c) => c.specs?.category === 'battery_cell');
 
+  // Per-cell contributions, shown so the user can see where the total comes from
+  const contributions: ChainLink[] = [];
   let totalWh = 0;
+
   for (const battery of batteries) {
     if (battery.specs) {
       const capacity = battery.specs.specs['nominal_capacity'];
@@ -281,7 +288,7 @@ function buildEnergyChain(
       if (capacity && voltage) {
         const wh = (capacity.value * voltage.value) / 1000;
         totalWh += wh;
-        links.push({
+        contributions.push({
           component: battery,
           constraintType: 'max_output',
           maxValue: wh,
@@ -294,7 +301,29 @@ function buildEnergyChain(
     }
   }
 
-  return finalizeChain(claim, links);
+  if (contributions.length === 0) {
+    return finalizeChain(claim, []);
+  }
+
+  // Stored energy is additive across cells. A single cell is not a bottleneck
+  // for the pack, so the pack total is the only thing the claim is measured
+  // against; the per-cell links are kept for display when there is more than one.
+  const packLink: ChainLink = {
+    component: batteries[0],
+    constraintType: 'max_output',
+    maxValue: totalWh,
+    unit: 'Wh',
+    isBottleneck: false,
+    explanation:
+      contributions.length === 1
+        ? contributions[0].explanation
+        : `${contributions.length} cells total: ${totalWh.toFixed(1)}Wh stored energy`,
+    sourceSpec: 'nominal_capacity',
+  };
+
+  const links = contributions.length === 1 ? [packLink] : [...contributions, packLink];
+
+  return finalizeChain(claim, links, [packLink]);
 }
 
 /**
@@ -503,7 +532,17 @@ function buildGenericChain(
 /**
  * Finalize chain: find bottleneck and determine verdict
  */
-function finalizeChain(claim: Claim, links: ChainLink[]): ConstraintChain {
+function finalizeChain(
+  claim: Claim,
+  links: ChainLink[],
+  /**
+   * Links eligible to be the bottleneck. Defaults to every link, which is
+   * correct for serial chains where each stage caps the one before it. Chains
+   * over additive quantities (pack capacity, stored energy) pass the aggregate
+   * link only, so a single cell is not mistaken for a limit on the whole pack.
+   */
+  bottleneckCandidates: ChainLink[] = links
+): ConstraintChain {
   if (links.length === 0) {
     return {
       claim,
@@ -516,9 +555,11 @@ function finalizeChain(claim: Claim, links: ChainLink[]): ConstraintChain {
     };
   }
 
+  const candidates = bottleneckCandidates.length > 0 ? bottleneckCandidates : links;
+
   // Find the minimum value (bottleneck)
-  let minLink = links[0];
-  for (const link of links) {
+  let minLink = candidates[0];
+  for (const link of candidates) {
     if (link.maxValue < minLink.maxValue) {
       minLink = link;
     }

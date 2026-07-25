@@ -1,63 +1,43 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+/**
+ * Scan Result
+ *
+ * Shows the verdict for the claim the user just scanned, together with the
+ * constraint chain it was derived from. Everything on this screen comes from
+ * the pipeline run held in the store — there is no placeholder data.
+ */
+
+import { useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import type { VerdictResult, VerdictConfidence, ChainLink } from '@speccheck/shared-types';
 import { useAppStore } from '../src/store';
-import type { Verdict } from '@speccheck/shared-types';
+import { colors, spacing, borderRadius, typography } from '../src/ui/theme';
+import {
+  formatClaimValue,
+  formatVerdictForShare,
+  getConfidenceDescription,
+} from '../src/analysis';
 
-// Mock verdict for UI development
-const MOCK_VERDICT: Verdict = {
-  claimText: '10,000 lumens',
-  verdictType: 'implausible',
-  confidence: 0.92,
-  summary: 'The claimed 10,000 lumens is not physically achievable with the detected LED and driver components.',
-  explanation: 'The Cree XHP70.2 LED has a maximum output of approximately 4,292 lumens at maximum current. Even with perfect thermal management and efficiency, the detected MP3431 driver cannot supply sufficient current to reach the claimed output.',
-  constraintChain: [
-    {
-      step: 1,
-      component: 'Cree XHP70.2',
-      constraint: 'Maximum luminous flux: 4,292 lm @ 2.4A',
-      limits: 'LED junction temperature limits continuous high-current operation',
-    },
-    {
-      step: 2,
-      component: 'MP3431 LED Driver',
-      constraint: 'Maximum output current: 3A',
-      limits: 'Thermal throttling above 2.5A typical',
-    },
-    {
-      step: 3,
-      component: 'NCR18650GA Battery',
-      constraint: 'Maximum continuous discharge: 10A',
-      limits: 'Battery can support driver requirements',
-    },
-  ],
-  suggestedRealisticValue: '3,000-4,000 lumens',
-  dataQuality: {
-    specsConfidence: 0.95,
-    matchConfidence: 0.88,
-    datasheetAvailable: true,
-  },
-};
-
-function getVerdictColor(verdict: string): string {
-  switch (verdict) {
+function getVerdictColor(result: VerdictResult): string {
+  switch (result) {
     case 'plausible':
-      return '#00FF88';
-    case 'implausible':
-      return '#FF4444';
+      return colors.success;
+    case 'impossible':
+      return colors.error;
     case 'uncertain':
-      return '#FFAA00';
+      return colors.warning;
     default:
-      return '#666';
+      return colors.gray[500];
   }
 }
 
-function getVerdictIcon(verdict: string): keyof typeof Ionicons.glyphMap {
-  switch (verdict) {
+function getVerdictIcon(result: VerdictResult): keyof typeof Ionicons.glyphMap {
+  switch (result) {
     case 'plausible':
       return 'checkmark-circle';
-    case 'implausible':
+    case 'impossible':
       return 'close-circle';
     case 'uncertain':
       return 'help-circle';
@@ -66,12 +46,12 @@ function getVerdictIcon(verdict: string): keyof typeof Ionicons.glyphMap {
   }
 }
 
-function getVerdictLabel(verdict: string): string {
-  switch (verdict) {
+function getVerdictLabel(result: VerdictResult): string {
+  switch (result) {
     case 'plausible':
-      return 'Claim Verified';
-    case 'implausible':
-      return 'Claim Unlikely';
+      return 'Physically Plausible';
+    case 'impossible':
+      return 'Physically Impossible';
     case 'uncertain':
       return 'Inconclusive';
     default:
@@ -79,121 +59,216 @@ function getVerdictLabel(verdict: string): string {
   }
 }
 
-export default function ScanResultScreen() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
-  const { currentVerdict, detectedComponents } = useAppStore();
+function getConfidenceColor(confidence: VerdictConfidence): string {
+  switch (confidence) {
+    case 'high':
+      return colors.success;
+    case 'medium':
+      return colors.warning;
+    default:
+      return colors.error;
+  }
+}
 
-  // Use mock data for UI development
-  const verdict = MOCK_VERDICT;
+/** Label a chain link by the part it came from, falling back to the match */
+function linkPartNumber(link: ChainLink): string {
+  return (
+    link.component.specs?.partNumber ??
+    link.component.match.partNumber ??
+    'Unidentified component'
+  );
+}
+
+export default function ScanResultScreen() {
+  const { currentVerdict, currentChain, detectedComponents, saveComponent } = useAppStore();
+
+  const handleShare = useCallback(async () => {
+    if (!currentVerdict) return;
+
+    try {
+      await Share.share({
+        message: formatVerdictForShare(currentVerdict),
+        title: 'SpecCheck Analysis Result',
+      });
+    } catch (error) {
+      console.error('[ScanResult] Share failed:', error);
+    }
+  }, [currentVerdict]);
+
+  const handleSaveComponents = useCallback(() => {
+    for (const component of detectedComponents) {
+      if (component.specs) {
+        saveComponent(component.specs);
+      }
+    }
+    router.push('/saved');
+  }, [detectedComponents, saveComponent]);
+
+  // Reached without a completed scan — e.g. deep link, or back after a reset.
+  if (!currentVerdict) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+            <Ionicons name="close" size={28} color={colors.white} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Analysis Result</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        <View style={styles.emptyState}>
+          <Ionicons name="scan-outline" size={64} color={colors.gray[700]} />
+          <Text style={styles.emptyTitle}>No analysis yet</Text>
+          <Text style={styles.emptyText}>
+            Enter a claim and scan a board to see whether the parts can deliver it.
+          </Text>
+          <TouchableOpacity style={styles.primaryButton} onPress={() => router.replace('/')}>
+            <Ionicons name="scan" size={20} color={colors.black} />
+            <Text style={styles.primaryButtonText}>Start a Scan</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const verdict = currentVerdict;
+  const verdictColor = getVerdictColor(verdict.result);
+  const links = currentChain?.links ?? [];
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
-          <Ionicons name="close" size={28} color="#fff" />
+        <TouchableOpacity
+          style={styles.closeButton}
+          onPress={() => router.back()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="close" size={28} color={colors.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Analysis Result</Text>
-        <TouchableOpacity style={styles.shareButton}>
+        <TouchableOpacity
+          style={styles.shareButton}
+          onPress={handleShare}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
           <Ionicons name="share-outline" size={24} color="#00D4FF" />
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Verdict Card */}
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Verdict */}
         <View style={styles.verdictCard}>
-          <Ionicons
-            name={getVerdictIcon(verdict.verdictType)}
-            size={64}
-            color={getVerdictColor(verdict.verdictType)}
-          />
-          <Text style={[styles.verdictLabel, { color: getVerdictColor(verdict.verdictType) }]}>
-            {getVerdictLabel(verdict.verdictType)}
+          <Ionicons name={getVerdictIcon(verdict.result)} size={64} color={verdictColor} />
+          <Text style={[styles.verdictLabel, { color: verdictColor }]}>
+            {getVerdictLabel(verdict.result)}
           </Text>
-          <Text style={styles.claimText}>"{verdict.claimText}"</Text>
+          <Text style={styles.claimText}>
+            &quot;{formatClaimValue(verdict.claimed, verdict.unit)}&quot;
+          </Text>
           <View style={styles.confidenceBadge}>
+            <View
+              style={[
+                styles.confidenceDot,
+                { backgroundColor: getConfidenceColor(verdict.confidence) },
+              ]}
+            />
             <Text style={styles.confidenceText}>
-              {Math.round(verdict.confidence * 100)}% confidence
+              {getConfidenceDescription(verdict.confidence)}
             </Text>
+          </View>
+        </View>
+
+        {/* Claimed vs achievable */}
+        <View style={styles.comparisonCard}>
+          <View style={styles.comparisonItem}>
+            <Text style={styles.comparisonLabel}>Claimed</Text>
+            <Text style={[styles.comparisonValue, { color: colors.gray[300] }]}>
+              {verdict.claimed.toLocaleString()}
+            </Text>
+            <Text style={styles.comparisonUnit}>{verdict.unit}</Text>
+          </View>
+          <View style={styles.comparisonDivider}>
+            <Ionicons name="arrow-forward" size={20} color={colors.gray[600]} />
+          </View>
+          <View style={styles.comparisonItem}>
+            <Text style={styles.comparisonLabel}>Parts can deliver</Text>
+            <Text style={[styles.comparisonValue, { color: verdictColor }]}>
+              {Math.round(verdict.maxPossible).toLocaleString()}
+            </Text>
+            <Text style={styles.comparisonUnit}>{verdict.unit}</Text>
           </View>
         </View>
 
         {/* Summary */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Summary</Text>
-          <Text style={styles.summaryText}>{verdict.summary}</Text>
+          <Text style={styles.summaryText}>{verdict.explanation}</Text>
         </View>
 
-        {/* Realistic Value */}
-        {verdict.suggestedRealisticValue && (
-          <View style={styles.realisticCard}>
-            <Ionicons name="trending-down-outline" size={24} color="#00D4FF" />
-            <View style={styles.realisticContent}>
-              <Text style={styles.realisticLabel}>Realistic expectation</Text>
-              <Text style={styles.realisticValue}>{verdict.suggestedRealisticValue}</Text>
-            </View>
+        {/* Constraint chain */}
+        {links.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Constraint Chain</Text>
+            {links.map((link, index) => (
+              <View
+                key={`${linkPartNumber(link)}-${link.sourceSpec}-${index}`}
+                style={styles.chainStep}
+              >
+                <View
+                  style={[
+                    styles.stepNumber,
+                    link.isBottleneck && { backgroundColor: colors.error },
+                  ]}
+                >
+                  <Text style={styles.stepNumberText}>{index + 1}</Text>
+                </View>
+                <View style={styles.stepContent}>
+                  <View style={styles.stepHeader}>
+                    <Text style={styles.stepComponent}>{linkPartNumber(link)}</Text>
+                    {link.isBottleneck && (
+                      <View style={styles.bottleneckBadge}>
+                        <Ionicons name="warning" size={12} color={colors.error} />
+                        <Text style={styles.bottleneckText}>Bottleneck</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.stepConstraint}>{link.explanation}</Text>
+                  <Text style={styles.stepLimits}>
+                    {link.constraintType.replace(/_/g, ' ')} ·{' '}
+                    {link.maxValue.toLocaleString()} {link.unit}
+                  </Text>
+                </View>
+              </View>
+            ))}
           </View>
         )}
 
-        {/* Constraint Chain */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Analysis Chain</Text>
-          {verdict.constraintChain.map((step, index) => (
-            <View key={index} style={styles.chainStep}>
-              <View style={styles.stepNumber}>
-                <Text style={styles.stepNumberText}>{step.step}</Text>
-              </View>
-              <View style={styles.stepContent}>
-                <Text style={styles.stepComponent}>{step.component}</Text>
-                <Text style={styles.stepConstraint}>{step.constraint}</Text>
-                <Text style={styles.stepLimits}>{step.limits}</Text>
-              </View>
-            </View>
-          ))}
-        </View>
-
-        {/* Detailed Explanation */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Detailed Explanation</Text>
-          <Text style={styles.explanationText}>{verdict.explanation}</Text>
-        </View>
-
-        {/* Data Quality */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Data Quality</Text>
-          <View style={styles.qualityGrid}>
-            <View style={styles.qualityItem}>
-              <Text style={styles.qualityValue}>
-                {Math.round(verdict.dataQuality.specsConfidence * 100)}%
-              </Text>
-              <Text style={styles.qualityLabel}>Specs Accuracy</Text>
-            </View>
-            <View style={styles.qualityItem}>
-              <Text style={styles.qualityValue}>
-                {Math.round(verdict.dataQuality.matchConfidence * 100)}%
-              </Text>
-              <Text style={styles.qualityLabel}>Match Confidence</Text>
-            </View>
-            <View style={styles.qualityItem}>
-              <Ionicons
-                name={verdict.dataQuality.datasheetAvailable ? 'checkmark' : 'close'}
-                size={20}
-                color={verdict.dataQuality.datasheetAvailable ? '#00FF88' : '#FF4444'}
-              />
-              <Text style={styles.qualityLabel}>Datasheet</Text>
-            </View>
+        {/* Breakdown */}
+        {verdict.details.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Detailed Breakdown</Text>
+            {verdict.details
+              .filter((detail) => detail.trim().length > 0)
+              .map((detail, index) => (
+                <Text key={index} style={styles.detailText}>
+                  {detail}
+                </Text>
+              ))}
           </View>
-        </View>
+        )}
 
         {/* Actions */}
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.primaryButton}>
-            <Ionicons name="document-text-outline" size={20} color="#000" />
-            <Text style={styles.primaryButtonText}>View Full Report</Text>
+          <TouchableOpacity style={styles.primaryButton} onPress={handleSaveComponents}>
+            <Ionicons name="bookmark-outline" size={20} color={colors.black} />
+            <Text style={styles.primaryButtonText}>Save Components</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.secondaryButton}>
-            <Ionicons name="bookmark-outline" size={20} color="#00D4FF" />
-            <Text style={styles.secondaryButtonText}>Save Result</Text>
+          <TouchableOpacity style={styles.secondaryButton} onPress={() => router.replace('/')}>
+            <Ionicons name="scan-outline" size={20} color="#00D4FF" />
+            <Text style={styles.secondaryButtonText}>Scan Again</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -204,196 +279,239 @@ export default function ScanResultScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: colors.black,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
     borderBottomWidth: 1,
     borderBottomColor: '#222',
   },
   closeButton: {
-    padding: 4,
+    padding: spacing[1],
   },
   headerTitle: {
-    fontSize: 17,
+    fontSize: typography.fontSize.lg,
     fontWeight: '600',
-    color: '#fff',
+    color: colors.white,
   },
   shareButton: {
-    padding: 4,
+    padding: spacing[1],
+  },
+  headerSpacer: {
+    width: 30,
   },
   content: {
     flex: 1,
   },
+  contentContainer: {
+    paddingBottom: spacing[8],
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing[8],
+    gap: spacing[3],
+  },
+  emptyTitle: {
+    color: colors.white,
+    fontSize: typography.fontSize.xl,
+    fontWeight: '600',
+    marginTop: spacing[2],
+  },
+  emptyText: {
+    color: colors.gray[500],
+    fontSize: typography.fontSize.sm,
+    textAlign: 'center',
+    lineHeight: typography.fontSize.sm * 1.5,
+    marginBottom: spacing[4],
+  },
   verdictCard: {
     alignItems: 'center',
-    paddingVertical: 32,
-    paddingHorizontal: 16,
+    paddingVertical: spacing[8],
+    paddingHorizontal: spacing[4],
     backgroundColor: '#111',
-    margin: 16,
-    borderRadius: 16,
+    margin: spacing[4],
+    borderRadius: borderRadius.xl,
   },
   verdictLabel: {
-    fontSize: 24,
+    fontSize: typography.fontSize['2xl'],
     fontWeight: 'bold',
-    marginTop: 16,
+    marginTop: spacing[4],
+    textAlign: 'center',
   },
   claimText: {
-    fontSize: 18,
-    color: '#888',
-    marginTop: 8,
+    fontSize: typography.fontSize.lg,
+    color: colors.gray[400],
+    marginTop: spacing[2],
     fontStyle: 'italic',
   },
   confidenceBadge: {
-    backgroundColor: '#222',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    marginTop: 16,
-  },
-  confidenceText: {
-    color: '#666',
-    fontSize: 14,
-  },
-  section: {
-    paddingHorizontal: 16,
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#666',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 12,
-  },
-  summaryText: {
-    color: '#ccc',
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  realisticCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 212, 255, 0.1)',
-    marginHorizontal: 16,
-    marginBottom: 24,
-    padding: 16,
-    borderRadius: 12,
-    gap: 12,
+    backgroundColor: '#222',
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    borderRadius: borderRadius.full,
+    marginTop: spacing[4],
+    gap: spacing[2],
   },
-  realisticContent: {
+  confidenceDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  confidenceText: {
+    color: colors.gray[400],
+    fontSize: typography.fontSize.sm,
+  },
+  comparisonCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#111',
+    marginHorizontal: spacing[4],
+    borderRadius: borderRadius.xl,
+    paddingVertical: spacing[5],
+  },
+  comparisonItem: {
     flex: 1,
+    alignItems: 'center',
   },
-  realisticLabel: {
-    color: '#888',
-    fontSize: 13,
+  comparisonLabel: {
+    color: colors.gray[500],
+    fontSize: typography.fontSize.xs,
+    marginBottom: spacing[1],
   },
-  realisticValue: {
-    color: '#00D4FF',
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginTop: 2,
+  comparisonValue: {
+    fontSize: typography.fontSize['2xl'],
+    fontWeight: '700',
+  },
+  comparisonUnit: {
+    color: colors.gray[500],
+    fontSize: typography.fontSize.xs,
+  },
+  comparisonDivider: {
+    paddingHorizontal: spacing[2],
+  },
+  section: {
+    paddingHorizontal: spacing[4],
+    marginTop: spacing[6],
+  },
+  sectionTitle: {
+    color: colors.white,
+    fontSize: typography.fontSize.base,
+    fontWeight: '600',
+    marginBottom: spacing[3],
+  },
+  summaryText: {
+    color: colors.gray[300],
+    fontSize: typography.fontSize.sm,
+    lineHeight: typography.fontSize.sm * 1.6,
   },
   chainStep: {
     flexDirection: 'row',
-    marginBottom: 16,
-    gap: 12,
+    gap: spacing[3],
+    backgroundColor: '#111',
+    borderRadius: borderRadius.lg,
+    padding: spacing[4],
+    marginBottom: spacing[2],
   },
   stepNumber: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#222',
-    justifyContent: 'center',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#333',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   stepNumberText: {
-    color: '#00D4FF',
-    fontSize: 14,
-    fontWeight: '600',
+    color: colors.white,
+    fontSize: typography.fontSize.xs,
+    fontWeight: '700',
   },
   stepContent: {
     flex: 1,
   },
+  stepHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing[2],
+  },
   stepComponent: {
-    color: '#fff',
-    fontSize: 15,
+    color: colors.white,
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  bottleneckBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    paddingHorizontal: spacing[2],
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
+  },
+  bottleneckText: {
+    color: colors.error,
+    fontSize: typography.fontSize.xs,
     fontWeight: '600',
   },
   stepConstraint: {
-    color: '#888',
-    fontSize: 14,
-    marginTop: 4,
+    color: colors.gray[300],
+    fontSize: typography.fontSize.sm,
+    marginTop: spacing[1],
+    lineHeight: typography.fontSize.sm * 1.5,
   },
   stepLimits: {
-    color: '#555',
-    fontSize: 13,
-    marginTop: 2,
-    fontStyle: 'italic',
+    color: colors.gray[500],
+    fontSize: typography.fontSize.xs,
+    marginTop: spacing[1],
+    textTransform: 'capitalize',
   },
-  explanationText: {
-    color: '#aaa',
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  qualityGrid: {
-    flexDirection: 'row',
-    backgroundColor: '#111',
-    borderRadius: 12,
-    padding: 16,
-    justifyContent: 'space-around',
-  },
-  qualityItem: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  qualityValue: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  qualityLabel: {
-    color: '#666',
-    fontSize: 12,
+  detailText: {
+    color: colors.gray[400],
+    fontSize: typography.fontSize.sm,
+    lineHeight: typography.fontSize.sm * 1.6,
+    marginBottom: spacing[2],
   },
   actions: {
-    paddingHorizontal: 16,
-    paddingBottom: 32,
-    gap: 12,
+    paddingHorizontal: spacing[4],
+    marginTop: spacing[8],
+    gap: spacing[3],
   },
   primaryButton: {
     flexDirection: 'row',
-    backgroundColor: '#00D4FF',
-    paddingVertical: 16,
-    borderRadius: 12,
-    justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+    gap: spacing[2],
+    backgroundColor: '#00D4FF',
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing[4],
   },
   primaryButtonText: {
-    color: '#000',
-    fontSize: 16,
+    color: colors.black,
+    fontSize: typography.fontSize.base,
     fontWeight: '600',
   },
   secondaryButton: {
     flexDirection: 'row',
-    backgroundColor: '#111',
-    paddingVertical: 16,
-    borderRadius: 12,
-    justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+    gap: spacing[2],
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing[4],
     borderWidth: 1,
-    borderColor: '#222',
+    borderColor: '#333',
   },
   secondaryButtonText: {
     color: '#00D4FF',
-    fontSize: 16,
+    fontSize: typography.fontSize.base,
     fontWeight: '600',
   },
 });
