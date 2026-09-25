@@ -16,7 +16,7 @@ import type {
   Verdict,
 } from '@speccheck/shared-types';
 
-import { getComponentDetector } from '../recognition/ComponentDetector';
+import { getComponentDetector, type ComponentDetector } from '../recognition/ComponentDetector';
 import { getOCREngine } from '../recognition/OCREngine';
 import { getComponentMatcher } from '../recognition/ComponentMatcher';
 import { getSpecRetriever } from '../datasheet/SpecRetriever';
@@ -85,7 +85,6 @@ export class Pipeline {
   private state: PipelineState = createInitialState();
   private onStateChange: StateCallback | null = null;
 
-  private detector = getComponentDetector();
   private ocrEngine = getOCREngine();
   private matcher = getComponentMatcher();
   private specRetriever = getSpecRetriever();
@@ -94,8 +93,21 @@ export class Pipeline {
    * Initialize the pipeline
    */
   async initialize(): Promise<void> {
-    await this.detector.loadModel();
+    await this.getReadyDetector();
     console.log('[Pipeline] Initialized');
+  }
+
+  /**
+   * The detector singleton is disposed when the app goes to the background, so
+   * look it up on every use and reload it if needed rather than keeping a
+   * reference to an instance that may already be released.
+   */
+  private async getReadyDetector(): Promise<ComponentDetector> {
+    const detector = getComponentDetector();
+    if (!detector.isReady()) {
+      await detector.loadModel();
+    }
+    return detector;
   }
 
   /**
@@ -150,7 +162,8 @@ export class Pipeline {
       this.setState({ stage: 'detecting' });
       let stageStart = Date.now();
 
-      const detectionResult = await this.detector.detect(frame);
+      const detector = await this.getReadyDetector();
+      const detectionResult = await detector.detect(frame);
       timings.detection = Date.now() - stageStart;
 
       this.setState({ detections: detectionResult.regions });

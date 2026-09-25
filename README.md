@@ -80,8 +80,8 @@ This tool answers one question: can this hardware physically do what the seller 
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Scan flow (camera → verdict) | Working | Capture runs the full pipeline; results render from real data |
-| Component detection (TFLite) | In progress | Model loads on-device; mock fallback in dev builds only |
+| Scan flow (camera → verdict) | Working in dev builds | Capture runs the full pipeline; results render from real data. Release builds need the detection model below |
+| Component detection (TFLite) | In progress | No trained model ships yet, so release builds report that detection is unavailable; dev builds fall back to mock detections |
 | OCR (ML Kit) | In progress | Single ML Kit path, no fallback |
 | Datasheet lookup (API) | Working | Cached via Cloudflare KV |
 | Constraint chain analysis | Working | Runs on-device; no network call needed |

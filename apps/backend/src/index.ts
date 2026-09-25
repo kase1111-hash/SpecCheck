@@ -12,6 +12,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { bodyLimit } from 'hono/body-limit';
+import { HTTPException } from 'hono/http-exception';
 import { datasheetRoutes } from './routes/datasheet';
 import { analyzeRoutes } from './routes/analyze';
 import { communityRoutes } from './routes/community';
@@ -65,8 +66,12 @@ app.use('/*', async (c, next) => {
 // Structured request logging
 app.use('/*', requestLogger);
 
-// Global body size limit (5MB default)
-app.use('/*', bodyLimit({ maxSize: 5 * 1024 * 1024 }));
+// Global body size limit (5MB default). The submit route sets its own, larger
+// limit below, and a request has to pass every limit it hits, so skip it here.
+const defaultBodyLimit = bodyLimit({ maxSize: 5 * 1024 * 1024 });
+app.use('/*', (c, next) =>
+  c.req.path === '/api/community/submit' ? next() : defaultBodyLimit(c, next)
+);
 
 // Initialize services middleware
 app.use('/*', async (c, next) => {
@@ -110,5 +115,23 @@ app.use('/api/community/submit', requireAuth);
 app.route('/api/datasheet', datasheetRoutes);
 app.route('/api/analyze', analyzeRoutes);
 app.route('/api/community', communityRoutes);
+
+// Anything a handler throws comes back as JSON instead of Hono's plain-text 500
+app.onError((err, c) => {
+  if (err instanceof HTTPException) {
+    // bodyLimit attaches its own 413 response; our own throws carry a message
+    return err.res ? err.getResponse() : c.json({ error: err.message }, err.status);
+  }
+
+  console.error(`[${c.get('requestId')}] Unhandled error:`, err);
+  return c.json(
+    {
+      error: 'Internal server error',
+      message: 'Something went wrong. Please try again.',
+      requestId: c.get('requestId'),
+    },
+    500
+  );
+});
 
 export default app;

@@ -11,6 +11,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../index';
 import type { SearchRequest, IdentifyRequest } from './types';
+import { readJsonBody } from './body';
 
 export const datasheetRoutes = new Hono<AppEnv>();
 
@@ -34,7 +35,7 @@ datasheetRoutes.get('/:partNumber', async (c) => {
  * Search datasheets
  */
 datasheetRoutes.post('/search', async (c) => {
-  const body = await c.req.json<SearchRequest>();
+  const body = await readJsonBody<SearchRequest>(c);
   const service = c.get('datasheetService');
 
   if (!body.query || body.query.trim().length === 0) {
@@ -50,7 +51,7 @@ datasheetRoutes.post('/search', async (c) => {
  * Identify component from OCR text
  */
 datasheetRoutes.post('/identify', async (c) => {
-  const body = await c.req.json<IdentifyRequest>();
+  const body = await readJsonBody<IdentifyRequest>(c);
   const service = c.get('datasheetService');
 
   if (!body.textLines || body.textLines.length === 0) {

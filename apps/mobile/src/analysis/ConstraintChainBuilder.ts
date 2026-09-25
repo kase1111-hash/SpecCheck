@@ -383,6 +383,13 @@ function buildCurrentChain(
 ): ConstraintChain {
   const links: ChainLink[] = [];
 
+  // Drivers and LEDs quote current in mA, cells in A. Compare everything in
+  // the claim's unit so the bottleneck isn't picked by raw number.
+  const toClaimUnit = (value: number, unit: string): number => {
+    const amps = unit.toLowerCase() === 'ma' ? value / 1000 : value;
+    return claim.unit === 'mA' ? amps * 1000 : amps;
+  };
+
   // Find components with current limits
   for (const comp of components) {
     if (!comp.specs) continue;
@@ -399,8 +406,8 @@ function buildCurrentChain(
         links.push({
           component: comp,
           constraintType: 'max_current',
-          maxValue: spec.value,
-          unit: spec.unit,
+          maxValue: toClaimUnit(spec.value, spec.unit),
+          unit: claim.unit,
           isBottleneck: false,
           explanation: `${comp.specs.partNumber}: max ${spec.value}${spec.unit}`,
           sourceSpec: specKey,

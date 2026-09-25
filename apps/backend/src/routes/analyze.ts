@@ -9,6 +9,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../index';
 import type { AnalyzeRequest } from './types';
+import { readJsonBody } from './body';
 
 export const analyzeRoutes = new Hono<AppEnv>();
 
@@ -16,7 +17,7 @@ export const analyzeRoutes = new Hono<AppEnv>();
  * Analyze a claim against detected components
  */
 analyzeRoutes.post('/claim', async (c) => {
-  const body = await c.req.json<AnalyzeRequest>();
+  const body = await readJsonBody<AnalyzeRequest>(c);
   const service = c.get('llmService');
 
   // Validate request

@@ -81,8 +81,14 @@ export function parseClaim(
     const match = normalized.match(pattern);
     if (match) {
       let value = parseFloat(match[1]);
-      const multiplier = match.length === 4 ? match[2]?.toLowerCase() : null;
-      const unitStr = (match.length === 4 ? match[3] : match[2]).toLowerCase();
+      let multiplier = match.length === 4 ? match[2]?.toLowerCase() : null;
+      let unitStr = (match.length === 4 ? match[3] : match[2]).toLowerCase();
+
+      // The "m" in "mAh" and "mA" is milli, part of the unit, not a mega suffix
+      if (multiplier && UNIT_MAPPINGS[multiplier + unitStr]) {
+        unitStr = multiplier + unitStr;
+        multiplier = null;
+      }
 
       // Apply multiplier
       if (multiplier && MULTIPLIERS[multiplier]) {
@@ -174,5 +180,6 @@ export function formatClaimValue(value: number, unit: string): string {
   if (value < 1) {
     return `${value.toFixed(2)} ${unit}`;
   }
-  return `${Math.round(value).toLocaleString()} ${unit}`;
+  // Keep a decimal so a 4.8 V limit doesn't read as the 5 V it can't reach
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${unit}`;
 }

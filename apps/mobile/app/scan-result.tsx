@@ -101,7 +101,7 @@ export default function ScanResultScreen() {
         saveComponent(component.specs);
       }
     }
-    router.push('/saved');
+    router.dismissTo('/saved');
   }, [detectedComponents, saveComponent]);
 
   // Reached without a completed scan — e.g. deep link, or back after a reset.
@@ -121,7 +121,7 @@ export default function ScanResultScreen() {
           <Text style={styles.emptyText}>
             Enter a claim and scan a board to see whether the parts can deliver it.
           </Text>
-          <TouchableOpacity style={styles.primaryButton} onPress={() => router.replace('/')}>
+          <TouchableOpacity style={styles.primaryButton} onPress={() => router.dismissTo('/')}>
             <Ionicons name="scan" size={20} color={colors.black} />
             <Text style={styles.primaryButtonText}>Start a Scan</Text>
           </TouchableOpacity>
@@ -196,7 +196,7 @@ export default function ScanResultScreen() {
           <View style={styles.comparisonItem}>
             <Text style={styles.comparisonLabel}>Parts can deliver</Text>
             <Text style={[styles.comparisonValue, { color: verdictColor }]}>
-              {Math.round(verdict.maxPossible).toLocaleString()}
+              {verdict.maxPossible.toLocaleString(undefined, { maximumFractionDigits: 1 })}
             </Text>
             <Text style={styles.comparisonUnit}>{verdict.unit}</Text>
           </View>
@@ -266,7 +266,7 @@ export default function ScanResultScreen() {
             <Ionicons name="bookmark-outline" size={20} color={colors.black} />
             <Text style={styles.primaryButtonText}>Save Components</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.secondaryButton} onPress={() => router.replace('/')}>
+          <TouchableOpacity style={styles.secondaryButton} onPress={() => router.dismissTo('/')}>
             <Ionicons name="scan-outline" size={20} color="#00D4FF" />
             <Text style={styles.secondaryButtonText}>Scan Again</Text>
           </TouchableOpacity>

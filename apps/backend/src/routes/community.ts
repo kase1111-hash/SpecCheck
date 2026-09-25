@@ -13,6 +13,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../index';
 import type { SubmitRequest } from './types';
+import { readJsonBody } from './body';
 import { getSupabase } from '../db/client';
 import {
   createSubmission,
@@ -41,7 +42,7 @@ function isValidHttpUrl(url: string): boolean {
  * Submit a new verification
  */
 communityRoutes.post('/submit', async (c) => {
-  const body = await c.req.json<SubmitRequest>();
+  const body = await readJsonBody<SubmitRequest>(c);
   const storage = c.get('storageService');
   const env = c.env;
 
