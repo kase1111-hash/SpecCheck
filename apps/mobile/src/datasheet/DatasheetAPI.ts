@@ -14,9 +14,21 @@ import type {
   IdentifyResponse,
   ComponentCategory,
 } from '@speccheck/shared-types';
+import { useAppStore } from '../store';
+import { fetchWithTimeout } from '../utils/network';
 
 /** API base URL */
 const API_BASE_URL = 'https://api.speccheck.app';
+
+/** Give up on a stalled request instead of leaving the scan waiting forever */
+const REQUEST_TIMEOUT_MS = 10000;
+
+/**
+ * Whether the user has turned on Offline Mode, which keeps every lookup on-device
+ */
+export function isOfflineOnly(): boolean {
+  return useAppStore.getState().settings.offlineOnly;
+}
 
 /**
  * Datasheet API client
@@ -29,19 +41,33 @@ export class DatasheetAPI {
   }
 
   /**
+   * Send a request unless Offline Mode is on. Resolves to null when the
+   * request is skipped, times out, or fails, so callers fall back the same way.
+   */
+  private async request(path: string, init?: RequestInit): Promise<Response | null> {
+    if (isOfflineOnly()) {
+      return null;
+    }
+
+    const result = await fetchWithTimeout(`${this.baseUrl}${path}`, init, REQUEST_TIMEOUT_MS);
+    if (!result.ok) {
+      console.warn(`[DatasheetAPI] ${path} failed: ${result.error.message}`);
+      return null;
+    }
+    return result.value;
+  }
+
+  /**
    * Get datasheet by part number
    */
   async getByPartNumber(partNumber: string): Promise<ComponentSpecs | null> {
     try {
-      const response = await fetch(
-        `${this.baseUrl}/api/datasheet/${encodeURIComponent(partNumber)}`
+      const response = await this.request(
+        `/api/datasheet/${encodeURIComponent(partNumber)}`
       );
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          return null;
-        }
-        throw new Error(`API error: ${response.status}`);
+      if (!response) {
+        return null;
       }
 
       const data: DatasheetResponse = await response.json();
@@ -66,7 +92,7 @@ export class DatasheetAPI {
    */
   async search(request: DatasheetSearchRequest): Promise<DatasheetSearchResponse> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/datasheet/search`, {
+      const response = await this.request('/api/datasheet/search', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -74,8 +100,8 @@ export class DatasheetAPI {
         body: JSON.stringify(request),
       });
 
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+      if (!response) {
+        return { matches: [], totalCount: 0 };
       }
 
       return await response.json();
@@ -90,7 +116,7 @@ export class DatasheetAPI {
    */
   async identify(request: IdentifyRequest): Promise<IdentifyResponse> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/datasheet/identify`, {
+      const response = await this.request('/api/datasheet/identify', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -98,8 +124,8 @@ export class DatasheetAPI {
         body: JSON.stringify(request),
       });
 
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+      if (!response) {
+        return { matches: [], confidence: 0 };
       }
 
       return await response.json();

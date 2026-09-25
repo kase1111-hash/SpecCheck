@@ -11,7 +11,7 @@ import type {
   SpecRetrievalResult,
 } from '@speccheck/shared-types';
 import { getDatasheetCache } from './DatasheetCache';
-import { getDatasheetAPI } from './DatasheetAPI';
+import { getDatasheetAPI, isOfflineOnly } from './DatasheetAPI';
 
 /**
  * Spec retrieval service
@@ -100,7 +100,9 @@ export class SpecRetriever {
       component: {
         match,
         specs: null,
-        error: `No datasheet found for ${match.partNumber}`,
+        error: isOfflineOnly()
+          ? `No saved datasheet for ${match.partNumber} (Offline Mode is on)`
+          : `No datasheet found for ${match.partNumber}`,
       },
       source: 'none',
     };

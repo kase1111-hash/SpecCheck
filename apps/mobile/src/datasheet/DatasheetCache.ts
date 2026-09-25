@@ -125,8 +125,10 @@ export class DatasheetCache {
       }
     }
 
-    // Fallback to in-memory mock data for development
-    return this.getMockData(partNumber);
+    // Fallback to in-memory mock data for development only. In release builds
+    // a miss must stay a miss so the lookup goes to the API instead of
+    // presenting sample values as real datasheet specs.
+    return __DEV__ ? this.getMockData(partNumber) : null;
   }
 
   /**
