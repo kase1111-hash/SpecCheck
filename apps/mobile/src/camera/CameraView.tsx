@@ -12,8 +12,8 @@ import type { CameraFrame, CameraConfig } from '@speccheck/shared-types';
 import { generateFrameId } from './utils';
 
 interface CameraViewProps {
-  /** Called when a frame is captured for processing */
-  onFrameCapture: (frame: CameraFrame) => void;
+  /** Called when a frame is captured for processing; awaited before the next capture */
+  onFrameCapture: (frame: CameraFrame) => void | Promise<void>;
   /** Camera configuration */
   config: CameraConfig;
   /** Whether camera is active */
@@ -29,13 +29,16 @@ export function CameraView({
   children,
 }: CameraViewProps) {
   const cameraRef = useRef<ExpoCameraView>(null);
+  const isCapturingRef = useRef(false);
   const [permission, requestPermission] = useCameraPermissions();
 
   /**
    * Capture a full-resolution frame when user taps
    */
   const handleCapture = useCallback(async () => {
-    if (!cameraRef.current) return;
+    // Ignore taps while a capture or its processing is still running
+    if (!cameraRef.current || !isActive || isCapturingRef.current) return;
+    isCapturingRef.current = true;
 
     try {
       const photo = await cameraRef.current.takePictureAsync({
@@ -55,12 +58,14 @@ export function CameraView({
           isFullResolution: true,
         };
 
-        onFrameCapture(frame);
+        await onFrameCapture(frame);
       }
     } catch (error) {
       console.error('Failed to capture frame:', error);
+    } finally {
+      isCapturingRef.current = false;
     }
-  }, [onFrameCapture]);
+  }, [onFrameCapture, isActive]);
 
   // Handle permission states
   if (!permission) {
@@ -102,6 +107,7 @@ export function CameraView({
           <TouchableOpacity
             style={styles.captureButton}
             onPress={handleCapture}
+            disabled={!isActive}
             activeOpacity={0.7}
           >
             <View style={styles.captureButtonInner} />

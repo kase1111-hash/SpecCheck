@@ -143,7 +143,9 @@ export const useAppStore = create<AppState>()(
           return {
             savedComponents: [
               {
-                id: `saved-${Date.now()}`,
+                // Part numbers are unique in this list; a timestamp alone is not,
+                // since one scan saves several components in the same millisecond.
+                id: `saved-${component.partNumber}-${Date.now()}`,
                 component,
                 savedAt: Date.now(),
                 notes,
