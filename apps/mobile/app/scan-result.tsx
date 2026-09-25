@@ -196,7 +196,7 @@ export default function ScanResultScreen() {
           <View style={styles.comparisonItem}>
             <Text style={styles.comparisonLabel}>Parts can deliver</Text>
             <Text style={[styles.comparisonValue, { color: verdictColor }]}>
-              {Math.round(verdict.maxPossible).toLocaleString()}
+              {verdict.maxPossible.toLocaleString(undefined, { maximumFractionDigits: 1 })}
             </Text>
             <Text style={styles.comparisonUnit}>{verdict.unit}</Text>
           </View>

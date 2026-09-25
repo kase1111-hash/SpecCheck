@@ -536,6 +536,31 @@ describe('ConstraintChainBuilder', () => {
 
       expect(chain.verdict).toBe('impossible');
     });
+
+    it('compares mA and A specs in the same unit', () => {
+      const claim = createMockClaim({ value: 2, category: 'amps', unit: 'A' });
+      const driver = createDriverComponent(1200); // 1200 mA
+      const battery = createBatteryComponent(3500, 3.6, 8); // 8 A
+
+      const chain = buildConstraintChain(claim, [driver, battery]);
+
+      expect(chain.verdict).toBe('impossible');
+      expect(chain.maxPossible).toBeCloseTo(1.2);
+      expect(chain.unit).toBe('A');
+      expect(chain.bottleneck?.component.specs?.partNumber).toBe('PT4115');
+    });
+
+    it('reports limits in mA for mA claims', () => {
+      const claim = createMockClaim({ value: 1000, category: 'amps', unit: 'mA' });
+      const driver = createDriverComponent(1200);
+      const battery = createBatteryComponent(3500, 3.6, 8);
+
+      const chain = buildConstraintChain(claim, [driver, battery]);
+
+      expect(chain.verdict).toBe('plausible');
+      expect(chain.maxPossible).toBe(1200);
+      expect(chain.links.map((l) => l.maxValue)).toEqual([1200, 8000]);
+    });
   });
 
   describe('Voltage Chain', () => {

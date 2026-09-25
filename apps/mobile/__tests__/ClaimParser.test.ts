@@ -54,6 +54,29 @@ describe('ClaimParser', () => {
       expect(result?.unit).toBe('mAh');
     });
 
+    it.each([
+      ['20000mAh', 20000],
+      ['20,000 mAh', 20000],
+      ['5000 mah', 5000],
+      ['10k mAh', 10000],
+    ])('parses %s as %d mAh', (input, expected) => {
+      const result = parseClaim(input);
+      expect(result?.value).toBe(expected);
+      expect(result?.unit).toBe('mAh');
+      expect(result?.category).toBe('mah');
+    });
+
+    it('parses mA as milliamps', () => {
+      const result = parseClaim('500mA');
+      expect(result?.value).toBe(500);
+      expect(result?.unit).toBe('mA');
+      expect(result?.category).toBe('amps');
+    });
+
+    it('still treats m as mega when it is not part of a unit', () => {
+      expect(parseClaim('1m lumens')?.value).toBe(1000000);
+    });
+
     it('parses watts', () => {
       const result = parseClaim('100W');
       expect(result).not.toBeNull();
@@ -175,6 +198,11 @@ describe('ClaimParser', () => {
 
     it('formats regular values with locale string', () => {
       expect(formatClaimValue(500, 'W')).toBe('500 W');
+    });
+
+    it('keeps one decimal on regular values', () => {
+      expect(formatClaimValue(4.8, 'V')).toBe('4.8 V');
+      expect(formatClaimValue(17.85, 'W')).toBe('17.9 W');
     });
   });
 });
